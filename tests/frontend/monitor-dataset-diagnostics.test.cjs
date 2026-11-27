@@ -1333,6 +1333,13 @@ test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animati
 
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
     const baseHigh = fakeSvg._ddTsLiveState.high;
+    const baseIqrD = fakeSvg._parsed.find(n => n.getAttribute('data-dd-ts-iqr') !== undefined)?.getAttribute('d') || '';
+    assert.ok(baseIqrD.length > 0);
+    assert.ok(morphApp._ddNoiseLegendHtml(morphApp.tMonitor.bind(morphApp), { kind: 'status', tone: 'accent' }).includes('is-line-base'));
+    const initBaseDots = fakeSvg._parsed.filter(n => n.getAttribute('data-dd-ts-base-dot') !== undefined);
+    const baseSparseDot = initBaseDots.find(d => d.getAttribute('class').includes('is-sparse'));
+    assert.equal(baseSparseDot?.getAttribute('r'), '1.6');
+
     morphApp.toggleDatasetDiagOverviewPreset('easy');
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
     assert.equal(tsRafQueue.size, 1);
@@ -1346,6 +1353,15 @@ test('timestep chart 18-bin profile, IQR band, theoretical curves, morph animati
     assert.ok(Math.abs(fakeSvg._ddTsLiveState.high - midEasyHigh) < 1e-6);
     assert.equal(runNextFrame(360), true);
     assert.ok(fakeSvg._ddTsLiveState.high > baseHigh + 0.05);
+    const compIqrEl = baseEl.querySelector('[data-dd-ts-iqr]');
+    assert.ok(compIqrEl && compIqrEl.getAttribute('d') && compIqrEl.getAttribute('d') !== baseIqrD);
+    assert.notEqual(compIqrEl.getAttribute('display'), 'none');
+    assert.equal(baseEl.querySelectorAll('.is-ref').length, 0);
+    assert.equal(compEl.querySelector('[data-dd-ts-comp-area]'), null);
+    const compDot = compEl.querySelector('[data-dd-ts-comp-dot]');
+    assert.equal(compDot?.getAttribute('r'), '1.6');
+    const compBaseSparseDot = baseEl.querySelectorAll('[data-dd-ts-base-dot]').find(d => d.getAttribute('class').includes('is-sparse'));
+    assert.equal(compBaseSparseDot?.getAttribute('r'), '1.6');
 
     morphApp.toggleDatasetDiagOverviewPreset('attention');
     morphApp._renderDatasetDiagHeroSvg(mWrap, mStage, fakeSvg);
@@ -2956,6 +2972,9 @@ test('discrete non-adjacent populated bins connect into one continuous P25-P75 I
   app._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg, { animate: false });
   const heroIqrEl = ts.svg.querySelector('[data-dd-ts-iqr]');
   assert.ok(heroIqrEl, 'Overview timestep chart should render .m-dd-ts-iqr-band for discrete bins');
+  const heroDots = ts.svg.querySelectorAll('[data-dd-ts-base-dot]');
+  assert.equal(heroDots.length, 6);
+  assert.ok(heroDots.every(d => d.getAttribute('r') === '1.5'));
   const heroIqrD = heroIqrEl.getAttribute('d') || '';
   const heroSegs = heroIqrD.match(/M[^Z]+Z/g) || [];
   assert.equal(heroSegs.length, 1);
@@ -2999,4 +3018,82 @@ test('discrete non-adjacent populated bins connect into one continuous P25-P75 I
   const modalXs = Array.from(modalSegs[0].matchAll(/[ML](-?\d+(?:\.\d+)?)\s+-?\d+(?:\.\d+)?/g), m => Number(m[1]));
   assert.ok(Math.abs(Math.min(...modalXs) - modalPts[0].x) <= 0.2);
   assert.ok(Math.abs(Math.max(...modalXs) - modalPts.at(-1).x) <= 0.2);
+});
+
+test('excluded consecutive timestep bins with historical samples never draw base or comparison dots', () => {
+  const width = 1000 / 18;
+  const bins = Array.from({ length: 18 }, (_, bin) => ({
+    bin,
+    t_from: bin * width,
+    t_to: (bin + 1) * width,
+    count: bin === 14 ? 1 : 6,
+    images: bin === 14 ? 1 : 4,
+    comparable: bin !== 14 && bin !== 5,
+    mean_loss: 0.16 + bin * 0.015,
+    p25: 0.12 + bin * 0.012,
+    p75: 0.21 + bin * 0.018,
+    non_finite_count: 0,
+  }));
+  const data = {
+    ...structuredClone(SAMPLE_DATA),
+    timestep_scale: 'thousand',
+    sampling_config: { timestep_sampling: 'uniform', max_timestep: 700 },
+    timestep_profile: {
+      num_bins: 18,
+      bins,
+      by_status: {
+        attention: {
+          counts: Array.from({ length: 18 }, () => 4),
+          mean_loss: Array.from({ length: 18 }, (_, bin) => 0.30 + bin * 0.02),
+        },
+      },
+      by_group: {},
+    },
+  };
+
+  // 1. Initial unselected & comparison renders (fresh SVG build path)
+  const app = makeApp({ datasetDiagData: data, _monitorMotionAllowed: () => false });
+  const ts = makeWrapStage('timestep', 380, 176);
+  app._renderDatasetDiagHeroSvg(ts.wrap, ts.stage, ts.svg, { animate: false });
+
+  const excludedIdx = new Set(
+    ts.wrap._ddChartState.coords.filter(c => c.excluded).map(c => String(c.idx))
+  );
+  assert.ok(excludedIdx.size >= 4, 'multiple consecutive upper bins should be excluded');
+
+  const initBaseDots = ts.svg.querySelectorAll('[data-dd-ts-base-dot]');
+  assert.ok(initBaseDots.some(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))), 'non-excluded sparse bin draws dot');
+  assert.ok(initBaseDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))), 'excluded bins must not draw base dots');
+
+  app.toggleDatasetDiagOverviewPreset('attention');
+  const tsComp = makeWrapStage('timestep', 380, 176);
+  app._renderDatasetDiagHeroSvg(tsComp.wrap, tsComp.stage, tsComp.svg, { animate: false });
+
+  const freshBaseDots = tsComp.svg.querySelectorAll('[data-dd-ts-base-dot]');
+  const freshCompDots = tsComp.svg.querySelectorAll('[data-dd-ts-comp-dot]');
+  assert.ok(freshCompDots.length > 0);
+  assert.ok(freshBaseDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))), 'excluded bins must not draw base dots during comparison');
+  assert.ok(freshCompDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-comp-dot'))), 'excluded bins must not draw comparison dots');
+
+  // 2. DOM-patch comparison path (morph commitFinal)
+  withMockEnv({
+    document: { createElementNS: (_ns, tag) => makeEl(tag), querySelector: () => null },
+  }, () => {
+    const patchApp = makeApp({ datasetDiagData: data, _monitorMotionAllowed: () => false });
+    const baseEl = makeEl('g'), theoEl = makeEl('g'), compEl = makeEl('g'), selEl = makeEl('g'), yMaxEl = makeEl('text'), focusCompEl = makeEl('circle');
+    const fakeSvg = makeEl('svg');
+    fakeSvg.querySelector = sel => ({ '[data-dd-ts-base]': baseEl, '[data-dd-ts-density-theo]': theoEl, '[data-dd-ts-comp]': compEl, '[data-dd-ts-density-sel]': selEl, '[data-dd-ts-y-max]': yMaxEl, '[data-dd-ts-focus-comp]': focusCompEl })[sel] || null;
+    const pStage = makeEl('div'); pStage.clientWidth = 380; pStage.clientHeight = 176;
+    const pWrap = makeEl('div'); pWrap.dataset = { mode: 'timestep' };
+
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+    patchApp.toggleDatasetDiagOverviewPreset('attention');
+    patchApp._renderDatasetDiagHeroSvg(pWrap, pStage, fakeSvg);
+
+    const patchedBaseDots = baseEl.querySelectorAll('[data-dd-ts-base-dot]').filter(d => d.getAttribute('display') !== 'none');
+    const patchedCompDots = compEl.querySelectorAll('[data-dd-ts-comp-dot]');
+    assert.ok(patchedCompDots.length > 0);
+    assert.ok(patchedBaseDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-base-dot'))));
+    assert.ok(patchedCompDots.every(d => !excludedIdx.has(d.getAttribute('data-dd-ts-comp-dot'))));
+  });
 });

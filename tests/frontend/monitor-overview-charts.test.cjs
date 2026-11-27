@@ -1330,9 +1330,9 @@ test('the summary LR sparkline keeps early 30-point spacing when totalSteps is u
   assert.equal(shrinkTile.title, null);
   assert.deepEqual(hud.classList.removed, ['is-visible']);
 
-  // 4. CSS 取消 LR 卡片左侧渐隐遮罩
+  // 4. LR 卡片继承 .m-metric-viz 左侧渐隐遮罩
   const appCss = readRepo('frontend/css/app.css');
-  assert.match(appCss, /\.m-metric-viz-lr\s*\{\s*-webkit-mask-image:\s*none;\s*mask-image:\s*none;\s*\}/);
+  assert.doesNotMatch(appCss, /\.m-metric-viz-lr\b[^}]*mask-image\s*:\s*none/);
 
   // 5. _transitionSummaryProjection 与 _summaryLrPainter 在只变 Y 轴和变点数/X 轴时均无异常残留
   const { withAnimationFrames } = require('./helpers-animation.cjs');

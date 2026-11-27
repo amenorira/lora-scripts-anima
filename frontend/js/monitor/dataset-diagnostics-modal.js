@@ -2717,7 +2717,7 @@
           excluded: isExcluded,
         };
       });
-      const basePaths = this._ddBuildSegmentedLossPaths(basePts, lossBottom);
+      const basePaths = this._ddBuildSegmentedLossPaths(basePts);
       const iqr = detailIqrPath(basePts);
       const iqrHtml = iqr ? `<path class="m-dd-ts-iqr-band" d="${iqr}"/>` : '';
       const isoDotsHtml = basePaths.isolated.map(p =>
@@ -2885,7 +2885,7 @@
         }
         if (frames.length === before) return;
         frames.push(() => {
-          const segments = this._ddBuildSegmentedLossPaths(basePts, lossBottom);
+          const segments = this._ddBuildSegmentedLossPaths(basePts);
           for (const el of paths) el.setAttribute('d', segments[el.dataset.ddMark]);
           if (band) band.setAttribute('d', detailIqrPath(basePts));
           for (const el of isolated) el.setAttribute('cy', nextPoints.get(el.dataset.ddMark).y.toFixed(1));

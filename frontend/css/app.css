@@ -3204,7 +3204,6 @@ input[type="range"]::-webkit-slider-thumb {
   -webkit-mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, .52) 20%, #000 40%);
   mask-image: linear-gradient(to right, transparent 0%, rgba(0, 0, 0, .52) 20%, #000 40%);
 }
-.m-metric-viz-lr { -webkit-mask-image: none; mask-image: none; }
 .m-live-metric:hover .m-metric-viz { opacity: 1; }
 .m-metric-viz[hidden] { display: none; }
 .m-viz-svg { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -6887,7 +6886,7 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-leg i.is-line-dash.is-soft { border-top-color: var(--diag-prev-line, var(--text-tertiary)); opacity: .9; }
 .m-dd-leg i.is-line-ref { width: 13px; height: 0; border-top: 1.5px solid var(--diag-full-line, var(--text-secondary)); opacity: .68; }
 .m-dd-leg i.is-line-theo { width: 11px; height: 0; border-top: 1.5px dashed var(--accent); }
-.m-dd-leg i.is-line-base { width: 13px; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--text-secondary) 75%, transparent); }
+.m-dd-leg i.is-line-base { width: 13px; height: 2px; border-radius: 1px; background: var(--text-secondary); }
 .m-dd-leg i.is-iqr { width: 12px; height: 8px; border-radius: 2px; background: color-mix(in srgb, var(--text-secondary) 22%, transparent); border: 1px solid color-mix(in srgb, var(--text-secondary) 32%, transparent); }
 .m-dd-leg i.is-nan-x { color: var(--diag-tone-danger, var(--danger)); font: 700 12px/1 var(--font-sans); }
 
@@ -7059,27 +7058,21 @@ input[type="text"].te-inline-edit-input:focus { background: transparent; box-sha
 .m-dd-ts-excluded { pointer-events: none; }
 .m-dd-ts-excluded-line { stroke: color-mix(in srgb, var(--border-default) 90%, transparent); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
 .m-dd-ts-hit { fill: transparent; cursor: crosshair; }
-.m-dd-ts-iqr-band { fill: color-mix(in srgb, var(--text-secondary) 15%, transparent); stroke: color-mix(in srgb, var(--text-secondary) 16%, transparent); stroke-width: .75; pointer-events: none; transition: opacity var(--duration-slow) var(--ease-out); }
+.m-dd-ts-iqr-band { fill: color-mix(in srgb, var(--text-secondary) 15%, transparent); stroke: color-mix(in srgb, var(--text-secondary) 16%, transparent); stroke-width: .75; pointer-events: none; }
 .m-dd-ts-theo-line { fill: none; stroke: var(--accent); stroke-width: 1.25; stroke-dasharray: 3 2.5; opacity: .72; pointer-events: none; transition: opacity var(--duration-slow) var(--ease-out); }
 [data-dd-ts-density-theo] { transition: opacity var(--duration-slow) var(--ease-out); }
 .m-dd-ts-nan-mark line { stroke: var(--danger); stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
-.m-dd-ts-base-line { fill: none; stroke: var(--text-secondary); stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; transition: stroke var(--duration-slow) var(--ease-out), stroke-width var(--duration-slow) var(--ease-out), opacity var(--duration-slow) var(--ease-out); }
+.m-dd-ts-base-line { fill: none; stroke: var(--text-secondary); stroke-width: 1.85; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .m-dd-ts-base-line.is-sparse { stroke-dasharray: 2.5 2.5; opacity: .75; }
 .m-dd-ts-base-line.is-gap { stroke-dasharray: 2 3; opacity: .52; }
-.m-dd-ts-base-line.is-ref { stroke: var(--text-tertiary); stroke-width: 1.4; opacity: .72; }
-.m-dd-hero-svg.is-ts-comparing .m-dd-ts-iqr-band,
-.m-dd-hero-svg.is-ts-comparing [data-dd-ts-density-theo],
-.m-dd-hero-svg.is-ts-comparing .m-dd-ts-dot:not(.is-comp):not(.is-sparse) { opacity: 0; }
-.m-dd-ts-comp-area { fill: color-mix(in srgb, var(--accent) 12%, transparent); pointer-events: none; transition: fill var(--duration-slow) var(--ease-out); }
-.m-dd-ts-comp-area.is-tone-danger { fill: color-mix(in srgb, var(--danger) 12%, transparent); }
-.m-dd-ts-comp-area.is-tone-warn { fill: color-mix(in srgb, var(--warning) 12%, transparent); }
+.m-dd-hero-svg.is-ts-comparing [data-dd-ts-density-theo] { opacity: 0; }
 .m-dd-ts-comp-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; transition: stroke var(--duration-slow) var(--ease-out); }
 .m-dd-ts-comp-line.is-gap { stroke-dasharray: 3 3; opacity: .82; }
 .m-dd-ts-comp-line.is-tone-danger { stroke: var(--danger); }
 .m-dd-ts-comp-line.is-tone-warn { stroke: var(--warning); }
-.m-dd-ts-dot { fill: var(--monitor-card-bg); stroke: var(--text-secondary); stroke-width: 1.4; pointer-events: none; transition: opacity var(--duration-slow) var(--ease-out); }
-.m-dd-ts-dot.is-sparse { stroke: var(--warning); stroke-dasharray: 2 1.5; }
-.m-dd-ts-dot.is-comp { fill: var(--accent); stroke: var(--monitor-card-bg); stroke-width: 1.2; transition: fill var(--duration-slow) var(--ease-out), opacity var(--duration-slow) var(--ease-out); }
+.m-dd-ts-dot { fill: var(--text-secondary); stroke: none; pointer-events: none; }
+.m-dd-ts-dot.is-sparse { fill: var(--warning); }
+.m-dd-ts-dot.is-comp { fill: var(--accent); transition: fill var(--duration-slow) var(--ease-out); }
 .m-dd-ts-dot.is-comp.is-tone-danger { fill: var(--danger); }
 .m-dd-ts-dot.is-comp.is-tone-warn { fill: var(--warning); }
 .m-dd-ts-sample-dot { stroke: var(--monitor-card-bg); stroke-width: 1.1; fill-opacity: .92; pointer-events: none; }
