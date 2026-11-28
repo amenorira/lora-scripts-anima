@@ -7,7 +7,7 @@ from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
 from backend.async_utils import settled_to_thread
-from backend.monitor.run_registry import resolve_user_path
+from backend.training.config.storage_paths import resolve_training_path
 from backend.training.datasets.sd_dataset_config import _dreambooth_subsets
 from backend.training.execution.preparation import training_error
 
@@ -43,7 +43,7 @@ def sd_scripts_cache_files(config, profile_id):
     for key in ("train_data_dir", "reg_data_dir"):
         if not config.get(key):
             continue
-        root = Path(config[key]).resolve()
+        root = resolve_training_path(config[key])
         for subset in _dreambooth_subsets(str(root), is_reg=key == "reg_data_dir"):
             directory = Path(subset["image_dir"])
             if directory.resolve() != directory:
@@ -117,7 +117,7 @@ def delete_te_cache(dirs: list[str]) -> tuple[int, list[str]]:
         raw = str(raw or "").strip()
         if not raw:
             continue
-        path = resolve_user_path(raw)
+        path = resolve_training_path(raw)
         if not path.is_dir():
             errors.append(f"not a directory / 不是目录: {raw}")
             continue

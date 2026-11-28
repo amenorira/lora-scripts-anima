@@ -30,8 +30,8 @@ def moss_config(**overrides):
 class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
     async def test_cached_launch_keeps_external_prompts_after_source_changes(self):
         import tomllib
+        from backend import constants
         from backend.server.routes import training as routes
-        from backend.training.execution import launch_sd_scripts
         from backend.tasks import TaskManager
 
         with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
@@ -48,8 +48,8 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
                                enable_preview=True, sample_at_first=True, positive_prompts="", prompt_file=str(source),
                                cache_text_encoder_outputs=True)
             stack.enter_context(patch.object(routes, "tm", TaskManager()))
-            stack.enter_context(patch.object(launch_sd_scripts, "OUTPUT_DIR", root / "runs"))
-            stack.enter_context(patch.object(launch_sd_scripts, "AUTOSAVE_DIR", root / "autosave"))
+            stack.enter_context(patch.object(constants, "OUTPUT_DIR", root / "runs"))
+            stack.enter_context(patch.object(constants, "AUTOSAVE_DIR", root / "autosave"))
             launch = stack.enter_context(patch.object(routes, "run_train", return_value={"status": "success", "data": {}}))
             source.write_text("reserved --s 0")
             result = await routes._prepare_training(routes.launch.prepare_run, dict(form))
@@ -111,8 +111,8 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_preparation_writes_native_config_dataset_and_structured_prompts(self):
         import tomllib
+        from backend import constants
         from backend.server.routes import training as routes
-        from backend.training.execution import launch_sd_scripts
         from backend.tasks import TaskManager
 
         with tempfile.TemporaryDirectory() as directory:
@@ -136,7 +136,7 @@ class MossImageLaunchTests(unittest.IsolatedAsyncioTestCase):
                 stack.enter_context(patch.object(routes, "tm", TaskManager()))
                 for name, value in (("OUTPUT_DIR", root / "runs"),
                                     ("AUTOSAVE_DIR", root / "autosave")):
-                    stack.enter_context(patch.object(launch_sd_scripts, name, value))
+                    stack.enter_context(patch.object(constants, name, value))
                 launch = stack.enter_context(patch.object(routes, "run_train", return_value={"status": "success"}))
                 result = await routes._prepare_training(routes.launch.prepare_run, dict(form))
             self.assertEqual(result["status"], "success", result)

@@ -12,6 +12,7 @@ from PIL import Image
 
 from backend.tagger import api_engine
 from backend.tagger.errors import TaggerUserError
+from backend.training.config.storage_paths import resolve_training_path
 from backend.utils.file_io import atomic_write_text
 
 from tools import caption_images_moss as upstream
@@ -55,7 +56,7 @@ def validate_options(value: dict) -> dict:
         for key in ("knowledge_file", "prompt_file"):
             used = key == "knowledge_file" or options["prompt_source"] == "file"
             path = str(options[key]).strip() if used else ""
-            if path and not Path(path).expanduser().is_file():
+            if path and not resolve_training_path(path).is_file():
                 raise ValueError(f"File not found / 文件不存在: {key}")
         if options["prompt_source"] == "file" and not str(options["prompt_file"]).strip():
             raise ValueError("Select a prompt file / 请选择提示词文件")
@@ -66,7 +67,7 @@ def validate_options(value: dict) -> dict:
 
 def resolve_prompt(options: dict) -> str:
     if options.get("prompt_source") == "file":
-        return upstream.read_text(Path(options["prompt_file"]).expanduser())
+        return upstream.read_text(resolve_training_path(options["prompt_file"]))
     if options.get("prompt_source") == "text":
         return str(options["prompt_text"])
     return upstream.DEFAULT_PROMPT
@@ -91,7 +92,7 @@ def prepare_runtime(options: dict, root: Path) -> dict:
         return {"options": options, "loader": None, "template": ""}
     common = str(options["knowledge"])
     if options["knowledge_file"]:
-        common += "\n\n" + upstream.read_text(Path(options["knowledge_file"]).expanduser())
+        common += "\n\n" + upstream.read_text(resolve_training_path(options["knowledge_file"]))
     return {"options": options, "loader": upstream.KnowledgeLoader(root, common, options["dir_knowledge_name"], options["knowledge_suffix"]), "template": resolve_prompt(options)}
 
 
@@ -320,7 +321,7 @@ def validate_output_targets(paths: list[Path], options: dict, states: list[dict]
     if requests:
         for key in ("knowledge_file", "prompt_file"):
             if options.get(key) and (key != "prompt_file" or options.get("prompt_source") == "file"):
-                protected.append(Path(options[key]).expanduser())
+                protected.append(resolve_training_path(options[key]))
         for path in requests:
             for name in (options.get("dir_knowledge_name"), path.stem + options["knowledge_suffix"] if options.get("knowledge_suffix") else ""):
                 if name:

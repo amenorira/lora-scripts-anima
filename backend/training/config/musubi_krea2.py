@@ -18,6 +18,7 @@ from backend.training.config.krea2_network import (
     KREA2_PRESET_FILENAME, build_krea2_network_args, validate_krea2_network,
 )
 from backend.training.config.scheduler_config import normalize_scheduler_config, validate_scheduler_config
+from backend.training.config.storage_paths import KREA2_PATH_FIELDS, normalize_training_path
 from backend.training.config.optimizer_contracts import extract_optimizer_form, serialize_optimizer_args
 from backend.training.config.krea2_optimizers import (
     collect_arguments as _collect_krea2_arguments,
@@ -62,7 +63,9 @@ def krea2_auto_cache_dir(train_data_dir: Any) -> str:
     """Return Krea's deterministic cache directory for one source dataset."""
 
     raw_path = str(train_data_dir or "").strip()
-    return str(Path(raw_path) / KREA2_AUTO_CACHE_DIR_NAME) if raw_path else ""
+    if not raw_path:
+        return ""
+    return str(Path(normalize_training_path(raw_path)) / KREA2_AUTO_CACHE_DIR_NAME)
 
 
 def _as_int(config: dict[str, Any], key: str, errors: list[str], minimum: int = 0) -> int | None:
@@ -316,6 +319,10 @@ def _normalize_krea2_defaults(config: dict) -> None:
         "krea_cache_reuse": True, "krea_cache_vae_tiling": False, "krea_split_attn": "auto",
     }.items():
         config.setdefault(key, default)
+
+    for key in KREA2_PATH_FIELDS:
+        if isinstance(config.get(key), str) and config[key].strip():
+            config[key] = normalize_training_path(config[key])
 
     # Derive the cache directory from the dataset for every launch, including
     # launches from older presets and direct API calls.
@@ -696,8 +703,8 @@ def build_krea2_train_config(
     # unknown keys silently, which would otherwise make a displayed setting
     # look effective when it is not.
     result: dict[str, Any] = {
-        "dit": str(config["dit"]),
-        "vae": str(config["vae"]),
+        "dit": normalize_training_path(str(config["dit"])),
+        "vae": normalize_training_path(str(config["vae"])),
         "dataset_config": str(dataset_config_path),
         "network_module": config["network_module"],
         "network_dim": int(config["network_dim"]),
@@ -739,7 +746,7 @@ def build_krea2_train_config(
         if not _is_empty(config.get("num_timestep_buckets")):
             result["num_timestep_buckets"] = int(config["num_timestep_buckets"])
     if not _is_empty(config.get("network_weights")):
-        result["network_weights"] = str(config["network_weights"])
+        result["network_weights"] = normalize_training_path(str(config["network_weights"]))
         if config.get("dim_from_weights") and config["network_module"] == KREA2_NETWORK_MODULE:
             result["dim_from_weights"] = True
     if not _is_empty(config.get("scale_weight_norms")):
@@ -777,7 +784,7 @@ def build_krea2_train_config(
     if bool(config.get("save_state_on_train_end", False)):
         result["save_state_on_train_end"] = True
     if not _is_empty(config.get("resume")):
-        result["resume"] = str(config["resume"])
+        result["resume"] = normalize_training_path(str(config["resume"]))
     for key in ("save_every_n_steps", "save_last_n_epochs", "save_last_n_epochs_state", "save_last_n_steps", "save_last_n_steps_state"):
         if not _is_empty(config.get(key)):
             result[key] = int(config[key])
@@ -823,7 +830,7 @@ def build_krea2_train_config(
     if bool(config.get("enable_krea_samples", False)):
         if sample_prompts_path is None:
             raise ValueError("sample_prompts_path is required when Krea sampling is enabled")
-        result["text_encoder"] = str(config["text_encoder"])
+        result["text_encoder"] = normalize_training_path(str(config["text_encoder"]))
         result["sample_prompts"] = str(sample_prompts_path)
         result["sample_every_n_epochs"] = int(config.get("sample_every_n_epochs", 1))
         if not _is_empty(config.get("sample_every_n_steps")):
@@ -831,11 +838,11 @@ def build_krea2_train_config(
         if bool(config.get("sample_at_first", False)):
             result["sample_at_first"] = True
         if not _is_empty(config.get("turbo_dit")):
-            result["turbo_dit"] = str(config["turbo_dit"])
+            result["turbo_dit"] = normalize_training_path(str(config["turbo_dit"]))
             if bool(config.get("turbo_dit_cache", False)):
                 result["turbo_dit_cache"] = True
         if not _is_empty(config.get("turbo_lora")):
-            result["turbo_lora"] = str(config["turbo_lora"])
+            result["turbo_lora"] = normalize_training_path(str(config["turbo_lora"]))
             result["turbo_lora_multiplier"] = float(config.get("turbo_lora_multiplier", 1.0))
     scheduler_config = {**result, **{key: config[key] for key in ("warmup_type", "decay_type", "step_rules") if key in config}}
     normalize_scheduler_config(scheduler_config)

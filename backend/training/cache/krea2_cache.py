@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from backend.training.config.storage_paths import normalize_training_path, resolve_training_path
 from backend.training.datasets.krea2_dataset import dataset_groups, parse_krea2_resolution
 from backend.utils.file_io import atomic_write_text, read_text
 
@@ -18,6 +19,11 @@ _LEGACY_KREA2_CACHE_MANIFEST_NAMES = (".anima-krea2-cache.json",)
 # Musubi uses its short architecture ID in filenames; "krea2" is metadata only.
 _KREA2_CACHE_ARCHITECTURE = "kr2"
 STAGES = ("latents", "text_encoder")
+
+
+def _resolve_optional_path(value: Any) -> Path:
+    raw = str(value or "").strip()
+    return resolve_training_path(raw) if raw else Path("")
 
 
 def _group_cache_files(directory: Path) -> tuple[list[Path], list[Path]]:
@@ -29,10 +35,16 @@ def _group_cache_files(directory: Path) -> tuple[list[Path], list[Path]]:
 
 def krea2_cache_files(config: dict) -> tuple[set[Path], set[Path]]:
     """Find native caches in the namespaces used by the current dataset."""
-    root = Path(config["dataset_cache_dir"])
+    raw_cache = str(config.get("dataset_cache_dir") or "").strip()
+    logical_root = Path(normalize_training_path(raw_cache)) if raw_cache else Path("")
+    root = _resolve_optional_path(raw_cache)
     latents, text = set(), set()
     for _, directory, _ in dataset_groups(config):
-        target = root.resolve() / directory.relative_to(root)
+        try:
+            rel = directory.relative_to(logical_root)
+        except ValueError:
+            rel = resolve_training_path(directory).relative_to(root)
+        target = root / rel
         if target.resolve() != target:
             continue
         group_latents, group_text = _group_cache_files(target)
@@ -58,7 +70,7 @@ def _krea2_cache_conflicts(groups: list[tuple[Path, Path, list[Path]]]) -> list[
 
 
 def _path_identity(path_value: Any) -> dict[str, Any]:
-    path = Path(str(path_value or ""))
+    path = _resolve_optional_path(path_value)
     try:
         stat = path.stat()
     except OSError:
@@ -69,7 +81,7 @@ def _path_identity(path_value: Any) -> dict[str, Any]:
 def _krea2_cache_inputs(config: dict[str, Any], groups: list) -> dict:
     """Describe the inputs that determine cache contents."""
 
-    root = Path(str(config.get("train_data_dir") or ""))
+    root = _resolve_optional_path(config.get("train_data_dir"))
     entries: list[dict[str, Any]] = []
     images = [image for _, _, images in groups for image in images]
     for image in sorted(images):
@@ -78,8 +90,12 @@ def _krea2_cache_inputs(config: dict[str, Any], groups: list) -> dict:
         except OSError:
             continue
         caption = image.with_suffix(str(config.get("caption_extension") or ".txt"))
+        try:
+            rel_image = image.relative_to(root)
+        except ValueError:
+            rel_image = resolve_training_path(image).relative_to(root)
         item: dict[str, Any] = {
-            "image": str(image.relative_to(root)).replace("\\", "/"),
+            "image": str(rel_image).replace("\\", "/"),
             "size": stat.st_size,
             "mtime_ns": stat.st_mtime_ns,
         }
@@ -117,7 +133,7 @@ def _fingerprint_inputs(inputs: dict) -> str:
 
 
 def cache_manifest_path(cache_dir: str | Path) -> Path:
-    return Path(cache_dir) / KREA2_CACHE_MANIFEST_NAME
+    return _resolve_optional_path(cache_dir) / KREA2_CACHE_MANIFEST_NAME
 
 
 def read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
@@ -129,7 +145,7 @@ def read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
     old cache metadata readable so renaming it does not make users recache.
     """
 
-    directory = Path(cache_dir)
+    directory = _resolve_optional_path(cache_dir)
     paths = (cache_manifest_path(directory),) + tuple(
         directory / name for name in _LEGACY_KREA2_CACHE_MANIFEST_NAMES
     )
@@ -145,7 +161,7 @@ def read_cache_manifest(cache_dir: str | Path) -> tuple[dict[str, Any], Path]:
 
 def prepare_cache_manifest(config: dict[str, Any]) -> dict[str, Any]:
     """Persist a pending cache request before the worker process starts."""
-    cache_dir = Path(str(config["dataset_cache_dir"]))
+    cache_dir = _resolve_optional_path(config["dataset_cache_dir"])
     cache_dir.mkdir(parents=True, exist_ok=True)
     previous, _ = read_cache_manifest(cache_dir)
     groups = dataset_groups(config)
@@ -236,7 +252,7 @@ def get_krea2_cache_status(config: dict[str, Any], *, groups: list | None = None
 
 def _cache_status(config: dict, groups: list, fingerprint: str, manifest: dict) -> tuple[dict, dict]:
     """Evaluate a single filesystem snapshot without rescanning its dataset."""
-    cache_dir = Path(str(config.get("dataset_cache_dir") or ""))
+    cache_dir = _resolve_optional_path(config.get("dataset_cache_dir"))
     conflicts = _krea2_cache_conflicts(groups)
     latent_files = []
     text_files = []
@@ -317,13 +333,13 @@ def _stage_fingerprints(inputs: dict) -> dict[str, str]:
 
 
 def output_records(cache_dir: str | Path, files: list[Path]) -> dict[str, Any]:
-    root = Path(cache_dir).resolve()
+    root = _resolve_optional_path(cache_dir).resolve()
     records = {}
     for path in files:
         stat = path.stat()
         if stat.st_size <= 0:
             raise ValueError(f"Empty cache file / 缓存文件为空: {path}")
-        records[path.resolve().relative_to(root).as_posix()] = [stat.st_size, stat.st_mtime_ns]
+        records[resolve_training_path(path).relative_to(root).as_posix()] = [stat.st_size, stat.st_mtime_ns]
     return records
 
 

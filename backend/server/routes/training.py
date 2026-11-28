@@ -10,9 +10,9 @@ from pathlib import Path
 import toml
 from fastapi import APIRouter, BackgroundTasks, Query, Request
 
-from backend.constants import OUTPUT_DIR
+from backend import constants as _constants
 from backend.async_utils import settled_to_thread as _settled_to_thread
-from backend.monitor.run_registry import resolve_user_path
+from backend.training.config.storage_paths import resolve_training_path
 from backend.training import run_train
 from backend.training.execution import launch, launch_krea2, preparation, run_files
 from backend.training.core_registry import (
@@ -299,7 +299,8 @@ async def _prepare_training(helper, *args):
 
 def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
     """同步检查路径；由 API 放入工作线程，避免离线盘阻塞事件循环。"""
-    base = resolve_user_path(path or "./output")
+    output_root = _constants.OUTPUT_DIR
+    base = resolve_training_path(path or "./output")
     parent = _nearest_existing_parent(base)
     available = bool(parent and parent.is_dir())
     writable = bool(available and parent and os.access(parent, os.W_OK))
@@ -311,12 +312,12 @@ def _inspect_output_path(path: str, output_name: str, resume: bool) -> dict:
             pass
     run_name = f"{run_files.safe_output_name(output_name)}_时间戳"
     artifact_preview = base / run_name
-    monitor_preview = OUTPUT_DIR.resolve() / run_name
+    monitor_preview = output_root.resolve() / run_name
     return {
         "base_dir": str(base),
         "preview_dir": str(artifact_preview),
         "monitor_dir": str(monitor_preview),
-        "is_default": base == OUTPUT_DIR.resolve(),
+        "is_default": base == output_root.resolve(),
         "is_resume": resume,
         "same_location": artifact_preview == monitor_preview,
         "path_exists": base.exists(),
@@ -389,7 +390,7 @@ async def update_dataset_repeat(request: Request):
     try:
         result = await _settled_to_thread(
             apply_subset_repeats,
-            resolve_user_path(raw_dir),
+            resolve_training_path(raw_dir),
             payload.get("changes"),
         )
     except DatasetRepeatError as exc:
@@ -434,7 +435,7 @@ async def krea2_model_format(request: Request):
             message="Model path required / 请指定模型路径",
             data={"errorCode": "trainingModelPathRequired", "errorParams": {}},
         )
-    result = await asyncio.to_thread(inspect_krea2_checkpoint_format, Path(path.strip()))
+    result = await asyncio.to_thread(inspect_krea2_checkpoint_format, resolve_training_path(path.strip()))
     return APIResponseSuccess(data=result)
 
 

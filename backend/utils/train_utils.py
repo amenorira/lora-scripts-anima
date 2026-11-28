@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from backend.log import log
+from backend.training.config.storage_paths import resolve_training_path
 
 
 _IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
@@ -21,19 +22,24 @@ def validate_model(model_name: str):
     """底模路径预检：存在即可，能否加载由训练核心自己校验。
     返回 (是否可用, 提示信息)。HF 仓库名（如 org/repo）直接放行。
     """
-    if os.path.isdir(model_name):
+    raw = str(model_name or "").strip()
+    if not raw:
+        return False, "Validation failed: base model file not found, check the path / 校验失败：找不到底模文件，请检查路径"
+
+    resolved = str(resolve_training_path(raw))
+    if os.path.isdir(resolved):
         # diffusers 目录含 model_index.json；路径里带 unet 的多半是拆好的组件目录
-        if "model_index.json" not in os.listdir(model_name) and "unet" not in model_name:
-            log.warning(f"model_index.json not found under {model_name}, is this a complete HF model folder? / "
+        if "model_index.json" not in os.listdir(resolved) and "unet" not in resolved:
+            log.warning(f"model_index.json not found under {resolved}, is this a complete HF model folder? / "
                         f"目录里没看到 model_index.json，请确认这是完整的 HF 模型目录")
         return True, "ok"
 
-    if os.path.isfile(model_name):
+    if os.path.isfile(resolved):
         return True, "ok"
 
-    if model_name.count("/") == 1 \
-            and model_name[0] not in (".", "/") \
-            and model_name.rsplit(".", 1)[-1] not in ("pt", "pth", "ckpt", "safetensors"):
+    if raw.count("/") == 1 \
+            and raw[0] not in (".", "/") \
+            and raw.rsplit(".", 1)[-1] not in ("pt", "pth", "ckpt", "safetensors"):
         return True, "ok"
 
     return False, "Validation failed: base model file not found, check the path / 校验失败：找不到底模文件，请检查路径"
@@ -41,11 +47,13 @@ def validate_model(model_name: str):
 
 def validate_data_dir(path: str) -> bool:
     """校验训练数据目录：需存在，且含 `数字_名称` 格式的子目录；没有的话给出可操作的修复提示。"""
-    if not os.path.isdir(path):
-        log.error(f"Data dir {path} does not exist, check your params / 数据目录不存在：{path}（请检查参数）")
+    raw = str(path or "").strip()
+    resolved = str(resolve_training_path(raw)) if raw else ""
+    if not resolved or not os.path.isdir(resolved):
+        log.error(f"Data dir {resolved or path} does not exist, check your params / 数据目录不存在：{resolved or path}（请检查参数）")
         return False
 
-    with os.scandir(path) as entries:
+    with os.scandir(resolved) as entries:
         subdirs = [e.name for e in entries if e.is_dir()]
     if not subdirs:
         log.warning("No subdir found in data dir / 数据目录下没有子目录")
@@ -55,16 +63,16 @@ def validate_data_dir(path: str) -> bool:
         log.info(f"Found {len(legal)} legal dataset subdirs / 找到 {len(legal)} 个合规数据集子目录")
         return True
 
-    log.warning(f"No legal dataset subdir found in {path} / 在 {path} 中未找到合规数据集子目录")
-    if count_images(path, recursive=False, stop_after=1) > 0:
-        img_count = count_images(path, recursive=False)
+    log.warning(f"No legal dataset subdir found in {resolved} / 在 {resolved} 中未找到合规数据集子目录")
+    if count_images(resolved, recursive=False, stop_after=1) > 0:
+        img_count = count_images(resolved, recursive=False)
         repeat = suggest_num_repeat(img_count)
         log.error(
-            f"Images present but no repeat-prefixed subdir, create '{path}/{repeat}_zkz' and move images into it / "
-            f"数据目录 '{path}' 里有图片但没有 repeat 前缀子目录（如 '{repeat}_zkz'），请建立该子目录并移入图片"
+            f"Images present but no repeat-prefixed subdir, create '{resolved}/{repeat}_zkz' and move images into it / "
+            f"数据目录 '{resolved}' 里有图片但没有 repeat 前缀子目录（如 '{repeat}_zkz'），请建立该子目录并移入图片"
         )
     else:
-        log.error(f"No images found in {path} / 在 {path} 中没有找到图片")
+        log.error(f"No images found in {resolved} / 在 {resolved} 中没有找到图片")
     return False
 
 
@@ -77,7 +85,11 @@ def suggest_num_repeat(img_count: int) -> int:
 
 
 def _iter_images(path: str, recursive: bool) -> Iterator[Path]:
-    iterator = Path(path).rglob("*") if recursive else Path(path).glob("*")
+    raw = str(path or "").strip()
+    if not raw:
+        return iter(())
+    root = resolve_training_path(raw)
+    iterator = root.rglob("*") if recursive else root.glob("*")
     return (p for p in iterator if p.is_file() and p.suffix.lower() in _IMAGE_EXTS)
 
 

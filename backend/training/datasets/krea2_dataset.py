@@ -46,12 +46,19 @@ def image_files(
     caption_extension: str = ".txt",
 ) -> list[Path]:
     """Find captioned images, matching musubi's supported image formats."""
-    if not str(directory):
+    from backend.training.config.storage_paths import normalize_training_path, resolve_training_path
+
+    raw_dir = str(directory or "").strip()
+    if not raw_dir:
         return []
-    root = Path(directory)
+    root = Path(normalize_training_path(raw_dir))
     if not root.is_dir():
-        return []
-    excluded = Path(cache_dir).resolve() if cache_dir else None
+        resolved_root = resolve_training_path(raw_dir)
+        if not resolved_root.is_dir():
+            return []
+        root = resolved_root
+    raw_cache = str(cache_dir or "").strip()
+    excluded = resolve_training_path(raw_cache) if raw_cache else None
     extensions = set(_IMAGE_EXTENSIONS)
     if any(importlib.util.find_spec(name) is not None for name in ("jxlpy", "pillow_jxl")):
         extensions.add(".jxl")
@@ -76,12 +83,20 @@ def image_files(
 
 def dataset_groups(config: dict[str, Any]) -> list[tuple[Path, Path, list[Path]]]:
     """Give each source directory its own cache namespace for musubi's flat reader."""
-    if not config.get("train_data_dir"):
+    from backend.training.config.storage_paths import normalize_training_path, resolve_training_path
+
+    raw_train = str(config.get("train_data_dir") or "").strip()
+    if not raw_train:
         return []
-    root = Path(str(config.get("train_data_dir") or ""))
-    cache = Path(str(config.get("dataset_cache_dir") or ""))
+    root = Path(normalize_training_path(raw_train))
+    if not root.is_dir():
+        resolved_root = resolve_training_path(raw_train)
+        if resolved_root.is_dir():
+            root = resolved_root
+    raw_cache = str(config.get("dataset_cache_dir") or "").strip()
+    cache = Path(normalize_training_path(raw_cache)) if raw_cache else Path("")
     groups: dict[Path, list[Path]] = {}
-    for image in image_files(root, cache, str(config.get("caption_extension") or ".txt")):
+    for image in image_files(root, cache if raw_cache else None, str(config.get("caption_extension") or ".txt")):
         groups.setdefault(image.parent, []).append(image)
     result = []
     for directory, images in sorted(groups.items()):

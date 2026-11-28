@@ -152,8 +152,10 @@ def apply_subset_repeats(dataset_dir: Any, changes: Any) -> dict[str, Any]:
 
     全部校验通过后才动手；执行出错时尝试回滚，回滚不完整时返回每个目录的恢复位置。
     """
+    from backend.training.config.storage_paths import resolve_training_path
+
     raw_dir = str(dataset_dir or "").strip()
-    root = Path(raw_dir).expanduser()
+    root = resolve_training_path(raw_dir) if raw_dir else Path("")
     if not raw_dir or not root.is_dir():
         raise DatasetRepeatError(
             f"Dataset directory not found: {raw_dir} / 数据集目录不存在: {raw_dir}",

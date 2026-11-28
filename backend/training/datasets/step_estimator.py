@@ -271,13 +271,15 @@ def estimate_training_steps(config: dict[str, Any]) -> dict[str, Any]:
                 detail=str(exc),
             ) from exc
 
-    train_data_value = config.get("train_data_dir")
+    train_data_value = str(config.get("train_data_dir") or "").strip()
     if not train_data_value:
         raise StepEstimateError(
             "Select a training dataset directory / 请选择训练数据集目录",
             code="datasetRequired",
         )
-    train_data_dir = Path(str(train_data_value))
+    from backend.training.config.storage_paths import resolve_training_path
+
+    train_data_dir = resolve_training_path(train_data_value)
     if not train_data_dir.is_dir():
         raise StepEstimateError(
             f"Dataset directory not found: {train_data_dir} / 数据集目录不存在: {train_data_dir}",

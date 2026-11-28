@@ -12,7 +12,7 @@ from collections import Counter
 from contextlib import contextmanager
 from pathlib import Path
 
-from backend.constants import REPO_ROOT
+from backend.training.config.storage_paths import resolve_training_path
 from backend.utils.file_io import atomic_write_text, open_read
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 CAPTION_EXTENSIONS = (".txt", ".caption")
@@ -22,11 +22,7 @@ _cache_lock = threading.RLock()
 
 
 def resolve_dir(dir_path: str) -> Path:
-    """解析目录路径，支持相对路径；resolve 处理 .. 穿越"""
-    p = Path(dir_path)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p.resolve()
+    return resolve_training_path(dir_path)
 
 
 def find_caption(img_path: Path) -> Path | None:

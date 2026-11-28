@@ -203,11 +203,14 @@ def validate_captions(config: dict[str, Any]) -> list[str]:
 
 def validate_model_files(config: dict[str, Any]) -> list[str]:
     """Check required shards without loading model tensors or importing the training core."""
+    from backend.training.config.storage_paths import resolve_training_path
+
     errors = []
     model_paths: dict[str, list[Path]] = {}
     for key in ("pretrained_model_name_or_path", "text_encoder", "vae"):
-        path = Path(str(config.get(key) or ""))
-        if not path.is_file() or path.suffix.lower() != ".safetensors":
+        raw = str(config.get(key) or "").strip()
+        path = resolve_training_path(raw) if raw else Path("")
+        if not raw or not path.is_file() or path.suffix.lower() != ".safetensors":
             errors.append(f"{key}: select a local safetensors checkpoint / 请选择本地 safetensors 权重: {path}")
             continue
         match = re.fullmatch(r"(.+)-(\d{5})-of-(\d{5})\.safetensors", path.name)
@@ -226,7 +229,7 @@ def validate_model_files(config: dict[str, Any]) -> list[str]:
         else:
             model_paths[key] = [path]
     tokenizer = str(config.get("tokenizer_cache_dir") or "").strip()
-    if tokenizer and not Path(tokenizer).is_dir():
+    if tokenizer and not resolve_training_path(tokenizer).is_dir():
         errors.append("tokenizer_cache_dir: directory not found / 分词器目录不存在")
     premerge = _has_base_weights(config)
     if not errors and premerge:

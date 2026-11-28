@@ -378,7 +378,8 @@ def prepare_environment(prepare_onnxruntime: bool = True) -> None:
     if not os.environ.get("PATH"):
         os.environ["PATH"] = str(Path(sys.executable).parent)
 
-    check_dirs(["config/autosave", "logs"])
+    from backend.constants import AUTOSAVE_DIR, LOGS_DIR
+    check_dirs([AUTOSAVE_DIR, LOGS_DIR])
 
     try:
         check_requirements()

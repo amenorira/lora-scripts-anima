@@ -7,7 +7,7 @@ from pathlib import Path
 
 from backend.monitor.history import scan_history
 from backend.monitor.legacy_sample_steps import _read_calls, enrich_legacy_sample_steps
-from backend.monitor.run_registry import load_run_record, resolve_user_path
+from backend.monitor.run_registry import load_run_record, resolve_internal_run_dir, resolve_user_path
 from backend.monitor.sample_metadata import parse_sample_filename
 from backend.monitor.training import read_tensorboard_loss
 
@@ -123,7 +123,8 @@ def enrich_sample_loss(previews: list[dict], artifact_root: Path, run_dir: str) 
         return
     current = load_run_record(run_dir) if run_dir else None
     if not current:
-        enrich_legacy_sample_steps(previews, resolve_user_path(run_dir) if run_dir else artifact_root, artifact_root)
+        fallback_root = (resolve_internal_run_dir(run_dir) or resolve_user_path(run_dir)) if run_dir else artifact_root
+        enrich_legacy_sample_steps(previews, fallback_root, artifact_root)
         return
 
     if current.get("run_path") and current.get("task_id"):
@@ -152,7 +153,12 @@ def enrich_sample_loss(previews: list[dict], artifact_root: Path, run_dir: str) 
     by_epoch = defaultdict(list)
     if len(ordered) > 1 and any(not item["sample"].get("task_id") for item in previews):
         for source in ordered:
-            calls = _read_calls((resolve_user_path(source["run_dir"]),))
+            source_root = (
+                Path(source["run_path"])
+                if source.get("run_path")
+                else (resolve_internal_run_dir(source["run_dir"]) or resolve_user_path(source["run_dir"]))
+            )
+            calls = _read_calls((source_root,))
             calls_by_run[source["run_dir"]] = calls
             for call in calls:
                 by_epoch[call.epoch].append((call.start.strftime("%Y%m%d%H%M%S"),
@@ -176,7 +182,7 @@ def enrich_sample_loss(previews: list[dict], artifact_root: Path, run_dir: str) 
         groups[source["run_dir"]].append(preview)
 
     for source_run, items in groups.items():
-        root = resolve_user_path(source_run)
+        root = resolve_internal_run_dir(source_run) or resolve_user_path(source_run)
         enrich_legacy_sample_steps(items, root, calls=calls_by_run.get(source_run))
         # Filename-only records from resumed epochs must remain distinct batches
         # even when an old log has no sampling marker to recover a call ID.

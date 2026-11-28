@@ -29,6 +29,30 @@ if not (sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32):
     )
     raise SystemExit(1)
 
+# Ensure the --data-dir CLI flag takes effect in os.environ BEFORE
+# importing backend.log / backend.constants / backend.server.application.
+def _preapply_cli_env(argv: list[str]) -> None:
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--data-dir" and i + 1 < len(argv):
+            val = argv[i + 1].strip()
+            if val:
+                os.environ["ANIMA_DATA_DIR"] = os.path.abspath(os.path.expanduser(val))
+            i += 2
+            continue
+        if arg.startswith("--data-dir="):
+            val = arg.split("=", 1)[1].strip()
+            if val:
+                os.environ["ANIMA_DATA_DIR"] = os.path.abspath(os.path.expanduser(val))
+            i += 1
+            continue
+        i += 1
+
+
+if __name__ == "__main__":
+    _preapply_cli_env(sys.argv[1:])
+
 # 控制台通道要先建好，重的 torch/fastapi 导入才有处说"正在加载"
 from backend.log import log
 from backend.startup_output import finish_step, show_step
@@ -63,6 +87,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--listen", action="store_true", help="Listen on 0.0.0.0 (LAN access)")
     parser.add_argument("--auth", type=_auth_digest, dest="auth_digest", metavar="USERNAME:PASSWORD",
                         help="Require HTTP Basic authentication for the training UI")
+    parser.add_argument("--data-dir", type=str, default=None, metavar="DIR",
+                        help="External base directory for models, output, config, and logs (env: ANIMA_DATA_DIR)")
     parser.add_argument("--skip-prepare-environment", action="store_true",
                         help="Skip dependency check/repair at startup")
     parser.add_argument("--skip-prepare-onnxruntime", action="store_true",
@@ -95,6 +121,18 @@ def _report_optional_accelerators() -> None:
 
 
 def launch(args: argparse.Namespace) -> None:
+    # Apply the storage configuration before loading application services.
+    raw_data_dir = getattr(args, "data_dir", None)
+    if raw_data_dir is None:
+        raw_data_dir = os.environ.get("ANIMA_DATA_DIR")
+    if raw_data_dir is not None and raw_data_dir.strip():
+        os.environ["ANIMA_DATA_DIR"] = os.path.abspath(os.path.expanduser(raw_data_dir.strip()))
+    elif getattr(args, "data_dir", None) == "":
+        os.environ.pop("ANIMA_DATA_DIR", None)
+
+    if "backend.constants" in sys.modules:
+        sys.modules["backend.constants"].refresh_storage_paths()
+
     from backend.user_defaults import ensure_user_defaults
 
     ensure_user_defaults()

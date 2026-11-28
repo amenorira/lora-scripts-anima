@@ -9,6 +9,7 @@ from unittest.mock import patch
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from backend import constants
 from backend.training.config.musubi_krea2 import KREA2_FIELDS
 from backend.training.execution.krea2_preflight import krea2_preflight
 from backend.training.cache.krea2_cache import (
@@ -77,7 +78,7 @@ class Krea2PreparationLifecycleTests(unittest.TestCase):
                     return await request
 
             with patch.object(training_routes, "tm", manager), \
-                 patch.object(training_routes.launch_krea2, "OUTPUT_DIR", root / "runs"), \
+                 patch.object(constants, "OUTPUT_DIR", root / "runs"), \
                  patch.object(training_routes.launch_krea2, "krea2_preflight", return_value={"ok": True, "errors": [], "cache": {"ready": True}, "dataset_groups": []}), \
                  patch.object(training_routes.preparation, "mark_cache_manifest", side_effect=settle_manifest), \
                  stub_supervisor():

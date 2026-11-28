@@ -4,7 +4,7 @@ from pathlib import Path
 
 from safetensors import SafetensorError, safe_open
 
-from backend.constants import REPO_ROOT
+from backend.training.config.storage_paths import resolve_training_path
 
 
 _BLOCK_KEY = re.compile(r"(?:net\.|model\.diffusion_model\.)?blocks\.(\d+)\.")
@@ -20,7 +20,7 @@ class AnimaCheckpointError(ValueError):
 
 
 def anima_block_count(checkpoint: str | Path) -> int:
-    path = REPO_ROOT / Path(checkpoint).expanduser()
+    path = resolve_training_path(checkpoint)
     shard = re.fullmatch(r"(.*?)\d+-of-(\d+)\.safetensors", path.name)
     paths = (path,)
     if shard:

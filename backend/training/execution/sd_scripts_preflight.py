@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from backend.async_utils import settled_to_thread as _settled_to_thread
 from backend.log import log
+from backend.training.config.storage_paths import resolve_training_path
 from backend.training.execution.preparation import training_error as _training_error
 from backend.training.datasets.sd_dataset_config import SUBSET_TIMESTEP_OFFSETS_KEY, normalize_subset_timestep_offsets
 from backend.training.datasets.step_estimator import StepEstimateError, estimate_training_steps
@@ -118,20 +119,21 @@ async def check_input_files(config, model_train_type) -> tuple[int | None, dict 
     # 生成空子集并仅打警告，训练照常跑但没有正则化）。
     reg_data_dir = str(config.get("reg_data_dir") or "").strip()
     if reg_data_dir:
-        if not os.path.isdir(reg_data_dir):
+        resolved_reg_dir = resolve_training_path(reg_data_dir)
+        if not resolved_reg_dir.is_dir():
             return None, _training_error(
-                message=f"Regularization data dir does not exist / 正则化数据目录不存在: {reg_data_dir}",
-                code="regDataDirNotFound", params={"path": reg_data_dir},
+                message=f"Regularization data dir does not exist / 正则化数据目录不存在: {resolved_reg_dir}",
+                code="regDataDirNotFound", params={"path": str(resolved_reg_dir)},
             )
         reg_subdirs = [
             name
-            for name in os.listdir(reg_data_dir)
-            if os.path.isdir(os.path.join(reg_data_dir, name)) and name.split("_")[0].isdigit()
+            for name in os.listdir(resolved_reg_dir)
+            if (resolved_reg_dir / name).is_dir() and name.split("_")[0].isdigit()
         ]
         if not reg_subdirs:
             return None, _training_error(
-                message=f"No valid subfolder (e.g. 10_face) found in regularization data dir / 正则化数据目录中未找到有效子文件夹（如 10_face）: {reg_data_dir}",
-                code="regDataDirNoSubfolders", params={"path": reg_data_dir},
+                message=f"No valid subfolder (e.g. 10_face) found in regularization data dir / 正则化数据目录中未找到有效子文件夹（如 10_face）: {resolved_reg_dir}",
+                code="regDataDirNoSubfolders", params={"path": str(resolved_reg_dir)},
             )
 
     image_count = await _settled_to_thread(
@@ -153,11 +155,13 @@ async def check_input_files(config, model_train_type) -> tuple[int | None, dict 
                 message="Anima LoRA training requires the Qwen3 encoder path / Anima LoRA 训练需要填写 Qwen3 编码器路径",
                 code="qwen3Required",
             )
-        if not os.path.exists(qwen3_path):
-            return None, _training_error(message=f"Qwen3 model not found / Qwen3 模型不存在: {qwen3_path}", code="qwen3NotFound", params={"path": qwen3_path})
+        resolved_qwen3 = resolve_training_path(qwen3_path)
+        if not resolved_qwen3.exists():
+            return None, _training_error(message=f"Qwen3 model not found / Qwen3 模型不存在: {resolved_qwen3}", code="qwen3NotFound", params={"path": str(resolved_qwen3)})
         vae_path = config.get("vae", "").strip()
-        if not os.path.exists(vae_path):
-            return None, _training_error(message=f"VAE model not found / VAE 模型不存在: {vae_path}", code="vaeNotFound", params={"path": vae_path})
+        resolved_vae = resolve_training_path(vae_path) if vae_path else None
+        if not resolved_vae or not resolved_vae.exists():
+            return None, _training_error(message=f"VAE model not found / VAE 模型不存在: {resolved_vae or vae_path}", code="vaeNotFound", params={"path": str(resolved_vae or vae_path)})
         from backend.training.config.anima_blocks import validate_anima_block_limits
 
         try:

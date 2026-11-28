@@ -113,18 +113,18 @@ window.monitorCoreMixin = {
   runDetailData: null,    // 历史训练详情缓存
   _runDetailRequestSeq: 0,
 
-  // ── 当前输出文件列表对应的 run 目录（live 用 monitorData.output_dir，历史用 selectedRunDir）──
+  // ── 当前输出文件列表对应的 run 目录（live 用 monitorData.run_dir / output_dir，历史用 selectedRunDir）──
   get currentOutputRunDir() {
     if (this.selectedRunDir) return this.selectedRunDir;
-    if (this.monitorData && (this.monitorData.run_dir || this.monitorData.output_dir)) {
-      // 规范化为正斜杠相对路径
-      let od = String(this.monitorData.run_dir || this.monitorData.output_dir).replace(/\\/g, '/').replace(/^\.\//, '');
-      // 排除 output 根目录这种回退值（必须是 run 子目录才返回，如 output/<name>_<ts>）
-      if (od && od !== 'output' && od !== './output' && od.indexOf('output/') === 0 && od.split('/').length >= 2) {
-        return od;
-      }
+    const raw = this.monitorData && (this.monitorData.run_dir || this.monitorData.output_dir);
+    if (!raw) return '';
+    // 规范化为正斜杠路径，兼容相对路径 output/<run> 及外部绝对路径（如 Google Drive / RunPod）
+    let od = String(raw).trim().replace(/\\/g, '/').replace(/^\.\//, '');
+    if (od.length > 1) od = od.replace(/\/+$/, '');
+    if (!od || od === '.' || od === '/' || od === 'output' || od === './output' || /^[A-Za-z]:\/?$/.test(od)) {
+      return '';
     }
-    return '';
+    return od;
   },
 
   currentArtifactData() {

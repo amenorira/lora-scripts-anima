@@ -8,8 +8,10 @@ import subprocess
 import sys
 import tempfile
 
+from backend.constants import CACHE_DIR, LOGS_DIR, OUTPUT_DIR, REPO_ROOT
+
 PREFIX = "/tensorboard"
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 
 
 class TensorBoardService:
@@ -34,7 +36,7 @@ class TensorBoardService:
         from backend.log import log
 
         try:
-            log_path = Path(log_path or ROOT / "logs" / "tensorboard.log")
+            log_path = Path(log_path or LOGS_DIR / "tensorboard.log")
             log_path.parent.mkdir(parents=True, exist_ok=True)
             # tempfile's default directory can fall back to cwd when the system
             # temp directories are unwritable. Always keep our handshake beside
@@ -51,8 +53,8 @@ class TensorBoardService:
             with log_path.open("ab", buffering=0) as output:
                 self.process = subprocess.Popen(
                     [sys.executable, "-m", "backend.tensorboard_service", str(endpoint),
-                     str(port), str(logdir or ROOT / "output")],
-                    cwd=ROOT, stdout=output, stderr=subprocess.STDOUT,
+                     str(port), str(logdir or OUTPUT_DIR)],
+                    cwd=REPO_ROOT, stdout=output, stderr=subprocess.STDOUT,
                 )
             deadline = asyncio.get_running_loop().time() + 60
             while asyncio.get_running_loop().time() < deadline:

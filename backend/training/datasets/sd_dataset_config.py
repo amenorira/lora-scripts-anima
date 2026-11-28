@@ -40,11 +40,17 @@ def normalize_subset_timestep_offsets(value: Any) -> dict[str, float]:
 
 
 def _dreambooth_subsets(base_dir: str | None, *, is_reg: bool) -> list[dict[str, Any]]:
-    if not base_dir:
+    from backend.training.config.storage_paths import normalize_training_path, resolve_training_path
+
+    raw = str(base_dir or "").strip()
+    if not raw:
         return []
-    root = Path(base_dir)
+    root = Path(normalize_training_path(raw))
     if not root.is_dir():
-        return []
+        resolved_root = resolve_training_path(raw)
+        if not resolved_root.is_dir():
+            return []
+        root = resolved_root
 
     subsets: list[dict[str, Any]] = []
     # Match config_util.generate_dreambooth_subsets_config_by_subdirs: regularization

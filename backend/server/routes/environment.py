@@ -329,7 +329,7 @@ async def anima_model_status() -> dict:
     try:
         dest_dir_rel = SD_MODELS_DIR.relative_to(REPO_ROOT).as_posix() + "/"
     except ValueError:
-        dest_dir_rel = "models/"
+        dest_dir_rel = str(SD_MODELS_DIR).replace("\\", "/").rstrip("/") + "/"
     for file in files:
         file["dest_path"] = dest_dir_rel + file.get("filename", "")
     return {"files": files, "dest_dir": dest_dir_rel}

@@ -1,4 +1,5 @@
 """Generation failures preserve already completed output pairs."""
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ from unittest.mock import patch
 import torch
 from PIL import Image
 
+from backend import constants
 from backend.regularization import planning, storage, worker
 
 
@@ -71,6 +73,29 @@ class GenerationTests(unittest.TestCase):
         result = storage.read_manifest(root)
         self.assertEqual(result["status"], "failed")
         self.assertEqual([i["status"] for i in result["items"]], ["completed", "pending", "pending"])
+
+    def test_resolve_input_maps_relative_storage_paths_to_external_data_dir(self):
+        ext_data = self.root / "external_data"
+        abs_model = self.root / "explicit" / "custom.safetensors"
+        try:
+            with patch.dict(os.environ, {"ANIMA_DATA_DIR": str(ext_data)}, clear=False):
+                for key in ("ANIMA_MODELS_DIR", "ANIMA_TRAIN_DIR", "ANIMA_OUTPUT_DIR", "ANIMA_CONFIG_DIR"):
+                    os.environ.pop(key, None)
+                constants.refresh_storage_paths()
+                self.assertEqual(
+                    planning.resolve_input("./train/ds"),
+                    (ext_data / "train" / "ds").resolve(),
+                )
+                self.assertEqual(
+                    planning.resolve_input("./models/dit.safetensors"),
+                    (ext_data / "models" / "dit.safetensors").resolve(),
+                )
+                self.assertEqual(
+                    planning.resolve_input(str(abs_model)),
+                    abs_model.resolve(),
+                )
+        finally:
+            constants.refresh_storage_paths()
 
 
 if __name__ == "__main__":

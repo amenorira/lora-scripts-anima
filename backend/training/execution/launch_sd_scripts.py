@@ -3,11 +3,12 @@ import json
 from pathlib import Path
 from secrets import randbits
 
+from backend import constants as _constants
 from backend.async_utils import settled_to_thread as _settled_to_thread
-from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
 from backend.log import log
-from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
+from backend.monitor.run_registry import write_output_dir_reference
 from backend.training.config import toml_writer
+from backend.training.config.storage_paths import normalize_training_path, resolve_training_path
 from backend.training.execution import run_files, sd_scripts_preflight
 from backend.training.config.metrics_config import training_metrics_environment
 from backend.training.preview.config import CONFIG_NAME, ENV_KEY, prepare_config as prepare_preview_config
@@ -37,7 +38,7 @@ def get_sample_prompts(config: dict, *, require_scheduled: bool = False):
     randomly_choice_prompt = config.get('randomly_choice_prompt', False)
 
     if randomly_choice_prompt:
-        dataset_subdirs = [p for p in Path(config["train_data_dir"]).iterdir() if p.is_dir()]
+        dataset_subdirs = [p for p in resolve_training_path(config["train_data_dir"]).iterdir() if p.is_dir()]
         if len(dataset_subdirs) != 1:
             raise ValueError(
                 'Multiple subdirectories found / 多子文件夹; '
@@ -116,15 +117,16 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     is_resume = bool(config.get("resume", "").strip())
 
     # 用户设置的路径仅决定模型/断点/sample 的位置；日志、配置、TB 均保存在内部 run_dir。
-    requested_output_dir = str(config.get("output_dir", "./output") or "./output").strip()
+    requested_output_dir = str(settings.ui_config.get("output_dir") or config.get("output_dir") or "./output").strip()
+    output_dir_root = _constants.OUTPUT_DIR
     try:
-        output_base_path = await _settled_to_thread(resolve_user_path, requested_output_dir)
+        output_base_path = await _settled_to_thread(resolve_training_path, requested_output_dir)
     except (OSError, ValueError) as exc:
         return _training_error(
             message=f"Invalid output path / 输出路径无效: {exc}",
             code="invalidOutputPath", params={"path": requested_output_dir}, details=str(exc),
         )
-    internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
+    internal_run_dir = (output_dir_root / run_dir_name).resolve()
     artifact_run_dir = output_base_path / run_dir_name
     # ──────────────────────────────────────────────────────────
 
@@ -143,14 +145,15 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
     sample_prompts_arg = ""
     try:
         if prompt_file:
-            entries = await _settled_to_thread(read_prompt_entries, Path(prompt_file), moss=model_train_type == "moss-image-lora")
+            resolved_prompt_file = resolve_training_path(prompt_file)
+            entries = await _settled_to_thread(read_prompt_entries, resolved_prompt_file, moss=model_train_type == "moss-image-lora")
             if scheduled_moss:
                 require_scheduled_prompt(entries)
             if (model_train_type in ("anima-lora", "moss-image-lora")
                     and (config.get("cache_text_encoder_outputs") or config.get("cache_text_encoder_outputs_to_disk"))):
                 sample_prompts_arg = json.dumps(entries, ensure_ascii=False, allow_nan=False)
             else:
-                config["sample_prompts"] = prompt_file
+                config["sample_prompts"] = normalize_training_path(prompt_file, posix=True)
         else:
             sample_prompts_arg = await _settled_to_thread(get_sample_prompts, settings.ui_config, require_scheduled=scheduled_moss)
     except FileNotFoundError as exc:
@@ -191,10 +194,11 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task, 
         config["sample_prompts"] = str(write_manual_preview_cache(internal_run_dir / "log" / ".run-control", settings.ui_config))
 
     # ── A: autosave — 保留最近 50 个，清理旧文件 ────────────
-    AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
-    run_files.cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
+    autosave_dir = _constants.AUTOSAVE_DIR
+    autosave_dir.mkdir(parents=True, exist_ok=True)
+    run_files.cleanup_autosave(str(autosave_dir), keep=50)
 
-    toml_file = str(AUTOSAVE_DIR / f"{timestamp}_{reserved_task.task_id[:12]}.toml")
+    toml_file = str(autosave_dir / f"{timestamp}_{reserved_task.task_id[:12]}.toml")
     reserved_task.owned_autosave = Path(toml_file)
     toml_content = toml_writer.dumps(config)
     training_document = build_training_config(

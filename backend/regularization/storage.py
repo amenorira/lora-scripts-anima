@@ -7,10 +7,10 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 
-from backend.constants import REPO_ROOT
+from backend.constants import TRAIN_DIR
 from backend.utils.file_io import atomic_replace, open_read, read_text
 
-OUTPUT_ROOT = REPO_ROOT / "train" / "regularization"
+OUTPUT_ROOT = TRAIN_DIR / "regularization"
 _manifest_cache = OrderedDict()
 _cache_lock = threading.Lock()
 

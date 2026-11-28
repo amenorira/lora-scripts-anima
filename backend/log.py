@@ -1,6 +1,7 @@
 import logging
-import os
 from logging.handlers import RotatingFileHandler
+
+from backend.constants import LOGS_DIR
 
 COLORS = dict(text="#E0E6ED", muted="#AAB4C0", accent="#4DE0CE",
               secondary="#62ADFF", success="#72DB83", warning="#FFD166",
@@ -90,9 +91,9 @@ try:
     log.addHandler(rh)
 
     # File log with rotation (10 MB × 5 backups)
-    os.makedirs('logs', exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
     fh = RotatingFileHandler(
-        'logs/anima.log', maxBytes=10 * 1024 * 1024, backupCount=5, encoding='utf-8'
+        LOGS_DIR / 'anima.log', maxBytes=10 * 1024 * 1024, backupCount=5, encoding='utf-8'
     )
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(logging.Formatter(

@@ -11,7 +11,7 @@ from typing import Literal
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.constants import DEFAULT_ANIMA_DIT, REPO_ROOT
+from backend.constants import DEFAULT_ANIMA_DIT, resolve_project_path
 from backend.training.config.anima_blocks import validate_anima_block_limits
 from . import storage
 
@@ -72,8 +72,7 @@ def metadata():
 
 
 def resolve_input(value):
-    path = Path(value).expanduser()
-    return (path if path.is_absolute() else REPO_ROOT / path).resolve()
+    return resolve_project_path(value)
 
 
 def digest(value):

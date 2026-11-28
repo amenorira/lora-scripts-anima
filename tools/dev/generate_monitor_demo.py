@@ -187,7 +187,8 @@ def _write_sample_manifest(run_dir: Path, records: list[dict], steps: tuple[int,
 def create_demo_run(single: bool = False, epochs: int | None = None, prompt_count: int | None = None,
                     sample_shape: str = "square") -> Path:
     from PIL.PngImagePlugin import PngInfo
-    from backend.monitor.run_registry import write_run_record
+    from backend.constants import OUTPUT_DIR
+    from backend.monitor.run_registry import run_dir_ref, write_run_record
 
     if epochs is not None and not 1 <= epochs <= 1000:
         raise ValueError("epochs must be between 1 and 1000")
@@ -219,11 +220,11 @@ def create_demo_run(single: bool = False, epochs: int | None = None, prompt_coun
     if sample_shape != "square":
         mode += f"_{sample_shape}"
     run_name = f"monitor_demo_{mode}_{now:%Y%m%d-%H%M%S}_{uuid4().hex[:6]}"
-    run_dir = ROOT / "output" / run_name
-    run_dir.resolve().relative_to((ROOT / "output").resolve())
+    run_dir = OUTPUT_DIR / run_name
+    run_dir.resolve().relative_to(OUTPUT_DIR.resolve())
     run_dir.mkdir(parents=True, exist_ok=False)
     (run_dir / "sample").mkdir()
-    relative_run = run_dir.relative_to(ROOT).as_posix()
+    relative_run = run_dir_ref(run_dir)
     duration_seconds = steps[-1] // 2
     started_at = now - timedelta(seconds=duration_seconds)
     sampling_schedule = "sample_every_n_epochs = 1" if epochs is not None else "sample_every_n_steps = 400"

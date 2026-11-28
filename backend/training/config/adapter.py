@@ -33,6 +33,7 @@ from backend.training.fields.field_registry import (
     loraplus_applies,
 )
 from backend.training.config import toml_writer
+from backend.training.config.storage_paths import TRAINING_PATH_FIELDS, normalize_training_path
 from backend.training.config.optimizer_contracts import normalize_optimizer_config
 from backend.training.config.optimizer_contracts import is_empty_optimizer_value as _is_empty_value
 from backend.training.config.scheduler_config import normalize_scheduler_config
@@ -612,11 +613,22 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
                         )
                         continue
                 else:
-                    value = [_normalize_path(p) for p in parts]
+                    value = [normalize_training_path(p, posix=True) for p in parts]
+                adapted[key] = value
+                continue
+            if key == "base_weights" and isinstance(value, list):
+                value = [
+                    normalize_training_path(p, posix=True) if isinstance(p, str) else p
+                    for p in value
+                ]
                 adapted[key] = value
                 continue
             if isinstance(value, str):
-                value = _normalize_path(value)
+                value = (
+                    normalize_training_path(value, posix=True)
+                    if key in TRAINING_PATH_FIELDS
+                    else _normalize_path(value)
+                )
             adapted[key] = value
             continue
         # 未知 Anima 前缀字段
@@ -626,7 +638,11 @@ def adapt_config(config: dict[str, Any], gpu_ids: Any = None) -> tuple[dict[str,
         # 未知字段：警告但透传
         warnings.append(f"[Unknown field passed through / 未知字段已透传] {key}")
         if isinstance(value, str):
-            value = _normalize_path(value)
+            value = (
+                normalize_training_path(value, posix=True)
+                if key in TRAINING_PATH_FIELDS
+                else _normalize_path(value)
+            )
         adapted[key] = value
 
     return adapted, warnings

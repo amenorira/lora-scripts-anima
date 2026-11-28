@@ -18,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR, REPO_ROOT
+from backend.constants import AUTOSAVE_DIR, CONFIG_DIR, OUTPUT_DIR, REPO_ROOT
 from backend.training.checkpoint_state import state_resume_status
 from backend.utils.file_io import atomic_write_text
 
@@ -71,48 +71,77 @@ _CONTROL_FILES = {
 }
 
 
+def _map_relative_storage_path(value: Path) -> Path:
+    """将逻辑相对路径映射到对应存储根目录（兼容软链接与外部 OUTPUT_DIR / CONFIG_DIR）。"""
+    parts = value.parts
+    if parts and parts[0] == "output":
+        return OUTPUT_DIR.joinpath(*parts[1:])
+    if parts and parts[0] == "config":
+        return CONFIG_DIR.joinpath(*parts[1:])
+    return REPO_ROOT / value
+
+
 def resolve_user_path(path: str | Path) -> Path:
-    """将用户路径解析为绝对路径；相对路径以项目根目录为基准。"""
+    """将用户路径解析为绝对路径；相对路径以项目根目录或逻辑存储根目录为基准。"""
     value = Path(path).expanduser()
     if not value.is_absolute():
-        value = REPO_ROOT / value
+        if value.parts and value.parts[0] == "output":
+            value = OUTPUT_DIR.joinpath(*value.parts[1:])
+        else:
+            value = REPO_ROOT / value
     return value.resolve()
 
 
 def resolve_internal_run_dir(run_dir: str | Path) -> Path | None:
-    """解析并验证内部运行目录必须位于项目 output/ 下。"""
-    value = Path(run_dir)
+    """解析并验证内部运行目录必须严格位于 OUTPUT_DIR 下（拒绝根目录本身及越界路径）。"""
+    if not str(run_dir or "").strip():
+        return None
+    value = Path(run_dir).expanduser()
     if not value.is_absolute():
-        value = REPO_ROOT / value
+        if value.parts and value.parts[0] == "output":
+            value = OUTPUT_DIR.joinpath(*value.parts[1:])
+        else:
+            value = REPO_ROOT / value
     try:
+        output_root = OUTPUT_DIR.resolve()
         resolved = value.resolve()
-        resolved.relative_to(OUTPUT_DIR.resolve())
+        rel = resolved.relative_to(output_root)
+        if not rel.parts:
+            return None
         return resolved
     except (OSError, ValueError):
         return None
 
 
 def run_dir_ref(run_dir: str | Path) -> str:
-    """返回供 API/前端使用的项目相对运行目录。"""
+    """返回供 API/前端使用的规范逻辑运行目录（output/<subpath>）。"""
     resolved = resolve_internal_run_dir(run_dir)
     if resolved is None:
         raise ValueError(f"Invalid internal run directory: {run_dir}")
-    return str(resolved.relative_to(REPO_ROOT)).replace("\\", "/")
+    rel = resolved.relative_to(OUTPUT_DIR.resolve()).as_posix()
+    return f"output/{rel}"
 
 
 def artifact_dir_ref(artifact: Path) -> str:
-    """返回供记录存储的产物目录：项目内存相对路径，项目外存绝对路径。
+    """返回供记录存储的产物目录：OUTPUT_DIR 或项目内存相对路径，项目外存绝对路径。
 
-    产物目录位于项目内（如默认 ``./output``）时以项目根目录为基准存储，
-    保证运行目录在机器间整体拷贝（如 AutoDL ↔ 本机）后记录仍可解析；
-    跨盘/项目外目录必须保留绝对路径。
+    产物目录位于 OUTPUT_DIR 内（如默认 ``./output``、软链接 output/ 或外部 ANIMA_OUTPUT_DIR）
+    时以逻辑 ``output/<subpath>`` 存储，保证运行目录在机器间迁移后仍可解析；
+    跨盘/项目外目录保留绝对路径。
     """
+    resolved_artifact = artifact.resolve()
+    output_root = OUTPUT_DIR.resolve()
+    try:
+        rel = resolved_artifact.relative_to(output_root).as_posix()
+        return "output" if rel == "." else f"output/{rel}"
+    except ValueError:
+        pass
     root = REPO_ROOT.resolve()
     try:
-        artifact.relative_to(root)
+        resolved_artifact.relative_to(root)
     except ValueError:
-        return str(artifact)
-    return os.path.relpath(artifact, root).replace("\\", "/")
+        return str(resolved_artifact)
+    return os.path.relpath(resolved_artifact, root).replace("\\", "/")
 
 
 def write_output_dir_reference(run_dir: str | Path, artifact_dir: str | Path) -> None:
@@ -246,7 +275,7 @@ def _run_dir_holds_artifacts(run_dir: Path) -> bool:
 
 def _repair_artifact_location(run_dir: Path, meta: dict[str, Any], artifact: Path) -> None:
     """将运行记录中的产物目录修复为本机真实位置（原子写、幂等）。"""
-    _atomic_write_json(run_dir / RUN_META_NAME, {**meta, "artifact_dir": str(artifact)})
+    _atomic_write_json(run_dir / RUN_META_NAME, {**meta, "artifact_dir": artifact_dir_ref(artifact)})
     write_output_dir_reference(run_dir, artifact)
 
 
@@ -321,7 +350,7 @@ def load_run_record(
         "schema_version": schema_version,
         "gpu_processes": gpu_processes,
         "task_id": meta.get("task_id"),
-        "run_dir": internal.relative_to(REPO_ROOT).as_posix(),
+        "run_dir": run_dir_ref(internal),
         "run_path": internal,
         "artifact_dir": str(artifact),
         "artifact_path": artifact,
@@ -409,8 +438,12 @@ def _run_prompt_snapshot(run_dir: Path, config: dict) -> Path | None:
 
 
 def reusable_prompt_file(record: dict, source: str) -> str:
-    source_path = REPO_ROOT / source.strip().replace("\\", "/")
-    if source_path.is_file():
+    raw = source.strip().replace("\\", "/")
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        if candidate.is_file():
+            return source
+    elif (REPO_ROOT / candidate).is_file() or _map_relative_storage_path(candidate).is_file():
         return source
     run_dir = Path(record["run_path"])
     config = read_run_config(run_dir)
@@ -559,9 +592,19 @@ def import_legacy_external_runs(limit: int = 50) -> dict[str, int]:
             # Old markers may only identify the original output through their launch metadata or autosave.
             source = record["extra"].get("output_dir")
             if not source and record.get("autosave_file"):
-                autosave = REPO_ROOT / record["autosave_file"]
-                if autosave.parent == AUTOSAVE_DIR:
-                    source = _read_config_file(autosave).get("output_dir")
+                autosave_raw = Path(record["autosave_file"]).expanduser()
+                candidates = (
+                    (autosave_raw,)
+                    if autosave_raw.is_absolute()
+                    else (REPO_ROOT / autosave_raw, _map_relative_storage_path(autosave_raw))
+                )
+                for autosave in candidates:
+                    try:
+                        if autosave.resolve().parent == AUTOSAVE_DIR.resolve():
+                            source = _read_config_file(autosave).get("output_dir")
+                            break
+                    except OSError:
+                        continue
         for location in (record["artifact_path"], source):
             if location:
                 try:

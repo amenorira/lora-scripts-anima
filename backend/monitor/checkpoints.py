@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-from backend.constants import REPO_ROOT
 from backend.monitor.log_files import _tail_file
+from backend.monitor.run_registry import resolve_internal_run_dir, resolve_user_path
 
 LORA_EXTENSIONS = {".safetensors", ".pt", ".pth"}
 
@@ -123,9 +122,7 @@ def _parse_log_checkpoint_losses(run_dir: str) -> dict[str, float]:
     解析模式：在 'saving checkpoint' 行之前查找 'avr_loss=X.XXX' 或 'loss=X.XXX'。
     返回 {文件名: loss值} 字典。
     """
-    rd = Path(run_dir)
-    if not rd.is_absolute():
-        rd = (REPO_ROOT / run_dir).resolve()
+    rd = resolve_internal_run_dir(run_dir) or resolve_user_path(run_dir)
     if not rd.is_dir():
         return {}
 

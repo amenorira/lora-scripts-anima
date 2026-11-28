@@ -28,7 +28,7 @@ from backend.monitor.history import scan_history
 from backend.server.routes.realtime import router as realtime_router
 from backend.training.datasets.step_estimator import warm_up as warm_step_estimator
 from backend.training.shape_preview import warm_up as warm_shape_preview
-from backend.constants import REPO_ROOT
+from backend.constants import REPO_ROOT, LOGS_DIR
 from backend.startup_output import show_environment, show_ready, show_step
 
 # Windows 注册表常把 .js 映射成 text/plain，导致浏览器拒执行模块脚本
@@ -107,7 +107,7 @@ async def report_runtime_banner() -> None:
         tensorboard_url=tensorboard_url,
         tensorboard_state=state,
         access_notice=_access_notice(host, auth_digest is not None),
-        log_path=REPO_ROOT / "logs" / "anima.log",
+        log_path=LOGS_DIR / "anima.log",
     )
 
 

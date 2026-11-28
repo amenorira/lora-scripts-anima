@@ -9,6 +9,7 @@ from typing import Any
 from backend.training.core_registry import MUSUBI_TUNER_DIR
 from backend.training.cache.krea2_cache import get_krea2_cache_status
 from backend.training.config.krea2_options import OPTIONAL_OPTIMIZER_PACKAGES, is_empty
+from backend.training.config.storage_paths import resolve_training_path
 from backend.training.datasets.krea2_dataset import dataset_groups
 from backend.training.execution.musubi_runtime import shared_runtime_status
 
@@ -33,7 +34,8 @@ def _read_krea2_checkpoint_tensors(path: Path) -> dict[str, dict]:
 
 
 def inspect_krea2_checkpoint_format(path: Path) -> dict[str, str]:
-    tensors = _read_krea2_checkpoint_tensors(path)
+    resolved = resolve_training_path(path) if str(path).strip() else path
+    tensors = _read_krea2_checkpoint_tensors(resolved)
     int8_weights = any(name.endswith(".weight") and tensor.get("dtype") == "I8"
                        for name, tensor in tensors.items())
     if int8_weights and any(name.endswith(".comfy_quant") for name in tensors):
@@ -88,13 +90,14 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
                 f"training environment / 所选优化器需要 {optional_optimizer_package}，但共享训练环境未安装"
             )
     for key, label in (("dit", "Krea 2 RAW DiT"), ("vae", "Qwen-Image VAE"), ("text_encoder", "Qwen3-VL text encoder")):
-        path = Path(str(config.get(key) or ""))
-        if not path.is_file():
+        raw_value = str(config.get(key) or "").strip()
+        path = resolve_training_path(raw_value) if raw_value else Path("")
+        if not raw_value or not path.is_file():
             errors.append(f"{label} not found / 模型文件不存在: {path}")
         elif key != "vae":
             errors.extend(_krea2_checkpoint_format_errors(path, key, config))
     if require_cache and bool(config.get("enable_krea_samples", False)) and not is_empty(config.get("turbo_dit")):
-        turbo_path = Path(str(config["turbo_dit"]))
+        turbo_path = resolve_training_path(str(config["turbo_dit"]))
         if not turbo_path.is_file():
             errors.append(f"Krea 2 Turbo DiT not found / Turbo 模型文件不存在: {turbo_path}")
         else:
@@ -102,7 +105,7 @@ def krea2_preflight(config: dict[str, Any], require_cache: bool = True) -> dict[
     for key in ("network_weights", "turbo_lora"):
         if key == "turbo_lora" and not config.get("enable_krea_samples"):
             continue
-        if not is_empty(config.get(key)) and not Path(str(config[key])).is_file():
+        if not is_empty(config.get(key)) and not resolve_training_path(str(config[key])).is_file():
             errors.append(f"{key}: weights not found / 权重文件不存在: {config[key]}")
     groups = dataset_groups(config)
     cache_status = get_krea2_cache_status(config, groups=groups)

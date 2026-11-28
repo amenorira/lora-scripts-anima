@@ -1,12 +1,12 @@
 """Prepare Krea 2 training and cache jobs under an existing task reservation."""
 import json
 from datetime import datetime
-from pathlib import Path
 
+from backend import constants as _constants
 from backend.async_utils import settled_to_thread as _settled_to_thread
-from backend.constants import AUTOSAVE_DIR, OUTPUT_DIR
-from backend.monitor.run_registry import resolve_user_path, write_output_dir_reference
+from backend.monitor.run_registry import write_output_dir_reference
 from backend.training.config import toml_writer
+from backend.training.config.storage_paths import resolve_training_path
 from backend.training.execution import run_files
 from backend.training.core_registry import MUSUBI_TUNER_DIR, TrainingProfileError, get_profile, resolve_training_profile
 from backend.training.cache.krea2_cache import krea2_cache_files, mark_cache_manifest
@@ -54,16 +54,17 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
     safe_name = run_files.safe_output_name(str(output_name))
     run_dir_name = f"{safe_name}_{timestamp}_{reserved_task.task_id[:12]}"
     is_resume = bool(str(config.get("resume") or "").strip())
-    requested_output_dir = str(config.get("output_dir", "./output") or "./output").strip()
+    requested_output_dir = str(snapshot_form.get("output_dir") or config.get("output_dir") or "./output").strip()
+    output_dir_root = _constants.OUTPUT_DIR
     try:
-        output_base_path = await _settled_to_thread(resolve_user_path, requested_output_dir)
+        output_base_path = await _settled_to_thread(resolve_training_path, requested_output_dir)
     except (OSError, ValueError) as exc:
         return _training_error(
             message=f"Invalid output path / 输出路径无效: {exc}",
             code="invalidOutputPath", params={"path": requested_output_dir}, details=str(exc),
         )
 
-    internal_run_dir = (OUTPUT_DIR / run_dir_name).resolve()
+    internal_run_dir = (output_dir_root / run_dir_name).resolve()
     artifact_run_dir = output_base_path / run_dir_name
     try:
         await _settled_to_thread(
@@ -101,9 +102,10 @@ async def prepare_run(config, gpu_ids, timestamp, form_snapshot, reserved_task):
         )
         network_env["LYCORIS_KERNEL_BACKEND"] = kernel
 
-    AUTOSAVE_DIR.mkdir(parents=True, exist_ok=True)
-    run_files.cleanup_autosave(str(AUTOSAVE_DIR), keep=50)
-    toml_file = AUTOSAVE_DIR / f"{timestamp}_{reserved_task.task_id[:12]}-krea2.toml"
+    autosave_dir = _constants.AUTOSAVE_DIR
+    autosave_dir.mkdir(parents=True, exist_ok=True)
+    run_files.cleanup_autosave(str(autosave_dir), keep=50)
+    toml_file = autosave_dir / f"{timestamp}_{reserved_task.task_id[:12]}-krea2.toml"
     reserved_task.owned_autosave = toml_file
     train_toml = toml_writer.dumps(train_config)
     dataset_toml = toml_writer.dumps(dataset_config)
@@ -179,8 +181,8 @@ async def prepare_cache(config: dict, reserved_task):
         return error
 
     safe_name = run_files.safe_output_name(str(config.get("output_name", "krea2_lora")))
-    run_dir = (OUTPUT_DIR / f"{safe_name}_krea2_cache_{timestamp}_{reserved_task.task_id[:12]}").resolve()
-    cache_dir = Path(str(config["dataset_cache_dir"])).resolve()
+    run_dir = (_constants.OUTPUT_DIR / f"{safe_name}_krea2_cache_{timestamp}_{reserved_task.task_id[:12]}").resolve()
+    cache_dir = resolve_training_path(str(config["dataset_cache_dir"]))
     try:
         await _settled_to_thread(
             run_files.prepare_run_directories, cache_dir, run_dir,

@@ -121,8 +121,9 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
                 index=index,
             )
         if check_files and multiplier != 0:
-            if not file.is_absolute():
-                file = Path(__file__).resolve().parents[3] / file
+            from backend.training.config.storage_paths import resolve_training_path
+
+            file = resolve_training_path(path)
             if not file.is_file():
                 raise PreviewConfigError(
                     f"Preview LoRA #{index}: file not found / 文件不存在: {file}",
@@ -130,7 +131,7 @@ def normalize_loras(value, *, check_files=False, allow_incomplete=False):
                     index=index,
                     path=str(file),
                 )
-            path = str(file.resolve())
+            path = str(file)
         result.append({"path": path, "multiplier": multiplier})
     return result
 

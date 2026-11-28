@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 from backend.tagger import captioning
+from backend.training.config.storage_paths import resolve_training_path
 from backend.tagger.errors import TaggerIndexError, TaggerNotFoundError, TaggerUserError
 from backend.tagger.workspace_state import (
     _IMAGE_EXTENSIONS, _MAX_RECENT_ITEMS, _sources, _sources_lock,
@@ -26,7 +27,7 @@ def _enumerate_images(path: Path, recursive: bool) -> list[Path]:
 
 def scan_source(path_value: str, recursive: bool = True, caption_extension: str = ".txt", caption_options: dict | None = None) -> dict:
     _cleanup()
-    path = Path(path_value).expanduser().resolve()
+    path = resolve_training_path(path_value)
     if not path.exists():
         raise TaggerUserError("taggerSourceNotFound", "Source does not exist / 输入路径不存在")
     if path == Path(path.anchor):

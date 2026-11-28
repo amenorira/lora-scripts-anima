@@ -76,8 +76,11 @@ def crop_geometry(original, bucket, resized):
 
 
 def inspect_crops(config: dict) -> dict:
-    root = Path(str(config.get("train_data_dir") or ""))
-    if not config.get("train_data_dir") or not root.is_dir():
+    from backend.training.config.storage_paths import resolve_training_path
+
+    raw_train = str(config.get("train_data_dir") or "").strip()
+    root = resolve_training_path(raw_train) if raw_train else Path("")
+    if not raw_train or not root.is_dir():
         raise StepEstimateError(
             "Select a valid training dataset directory / 请选择有效的训练数据集目录",
             code="cropPreviewInvalidDataset",
@@ -109,7 +112,13 @@ def inspect_crops(config: dict) -> dict:
     items, capability, versions = [], {}, {}
     for path, repeats, is_reg in sorted(records, key=lambda record: (record[2], str(record[0]))):
         image_id = str(len(items))
-        name = path.absolute().as_posix() if is_reg else path.relative_to(root).as_posix()
+        if is_reg:
+            name = path.absolute().as_posix()
+        else:
+            try:
+                name = path.relative_to(root).as_posix()
+            except ValueError:
+                name = path.resolve().relative_to(root.resolve()).as_posix()
         item = {"id": image_id, "name": name, "sample_count": repeats, "is_reg": is_reg}
         try:
             # Authorize only the discovered image, retaining its logical name for grouping.

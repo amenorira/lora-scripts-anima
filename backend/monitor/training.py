@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from backend.constants import OUTPUT_DIR
+from backend.monitor.run_registry import resolve_internal_run_dir, resolve_user_path
 from backend.training.fields.field_registry import get_all_fields, field_applies_to_profile
 
 
@@ -61,6 +62,10 @@ def primary_learning_rate_tag(tags: Iterable[str]) -> str | None:
             standard = prefix + "unet"
             return standard if standard in matches else matches[0]
     return None
+
+
+def _resolve_run_dir_path(run_dir: str) -> Path:
+    return resolve_internal_run_dir(run_dir) or resolve_user_path(run_dir)
 
 
 def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False, epoch_only: bool = False) -> Any | None:
@@ -208,7 +213,7 @@ def read_tensorboard_loss(
     log_dirs: list[Path] = []
     if run_dir:
         # 指定 run_dir：只读该目录
-        rd = Path(run_dir)
+        rd = _resolve_run_dir_path(run_dir)
         log_sub = rd / "log"
         if log_sub.is_dir():
             log_dirs.append(log_sub)
@@ -290,7 +295,7 @@ def read_tensorboard_incremental(run_dir: str | None = None) -> dict[str, list[d
     # 扫描 log 目录（复用 read_tensorboard_loss 的路径逻辑）
     log_dirs: list[Path] = []
     if run_dir:
-        rd = Path(run_dir)
+        rd = _resolve_run_dir_path(run_dir)
         for candidate in [rd / "log", rd, rd.parent]:
             log_sub = candidate / "log" if candidate.name != "log" else candidate
             if log_sub.is_dir():

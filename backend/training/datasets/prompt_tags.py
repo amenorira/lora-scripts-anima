@@ -33,8 +33,10 @@ def _frequencies(counter: Counter) -> list[dict]:
 
 
 def inspect_prompt_tags(config: dict) -> dict:
+    from backend.training.config.storage_paths import resolve_training_path
+
     directory = str(config.get("train_data_dir") or "").strip()
-    root = Path(directory)
+    root = resolve_training_path(directory) if directory else Path("")
     if not directory or not root.is_dir():
         raise StepEstimateError(
             "Select a valid training dataset directory / 请选择有效的训练数据集目录",
@@ -54,7 +56,7 @@ def inspect_prompt_tags(config: dict) -> dict:
         from backend.training.datasets.step_estimator import _registered_dataset_subsets, _sd_dataset_helpers
 
         _, glob_images, _ = _sd_dataset_helpers()
-        payload = dict(config, train_data_dir=directory, enable_reg_data=False, reg_data_dir="")
+        payload = dict(config, train_data_dir=str(root), enable_reg_data=False, reg_data_dir="")
         groups = [(root / subset["name"], [Path(image) for image in subset["image_paths"]])
                   for subset in _registered_dataset_subsets(payload, glob_images)]
     combined: Counter = Counter()
@@ -84,7 +86,10 @@ def inspect_prompt_tags(config: dict) -> dict:
                 caption_count += 1
                 counts.update(tags)
                 leading.update(tags[:1])
-        relative = folder.relative_to(root).as_posix()
+        try:
+            relative = folder.relative_to(root).as_posix()
+        except ValueError:
+            relative = folder.resolve().relative_to(root.resolve()).as_posix()
         subsets.append(dict(id=relative, name=relative if relative != "." else root.name,
                             image_count=len(images), caption_count=caption_count, tags=_frequencies(counts), leading_tags=_frequencies(leading)))
         totals["caption_count"] += caption_count

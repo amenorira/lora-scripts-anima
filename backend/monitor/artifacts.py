@@ -16,6 +16,7 @@ from backend.constants import REPO_ROOT
 from backend.image_preview import build_image_preview_url
 
 from backend.monitor.checkpoints import LORA_EXTENSIONS, parse_checkpoint
+from backend.monitor.run_registry import resolve_internal_run_dir, resolve_user_path
 from backend.monitor.sample_loss import enrich_sample_loss
 from backend.monitor.sample_metadata import legacy_sample_metadata, read_sample_records, sample_manifest_version
 from backend.training.checkpoint_state import (
@@ -276,9 +277,7 @@ def _iter_output_entries(root: Path):
 
 def _output_entries(run_dir: str):
     """计数与文件列表共用目录范围及隐藏项规则。"""
-    rd = Path(run_dir)
-    if not rd.is_absolute():
-        rd = (REPO_ROOT / run_dir).resolve()
+    rd = resolve_internal_run_dir(run_dir) or resolve_user_path(run_dir)
     return _iter_output_entries(rd)
 
 

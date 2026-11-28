@@ -17,6 +17,7 @@ from unittest.mock import patch
 
 from backend.constants import DEFAULT_ANIMA_DIT
 from backend.training.config.anima_blocks import AnimaCheckpointError, anima_block_count
+from backend.training.config.storage_paths import resolve_training_path
 from backend.training.config.moss_image import NETWORK_MODULES as MOSS_NETWORK_MODULES
 from backend.training.config.krea2_network import (
     KREA2_NETWORK_MODULES, build_krea2_network_args, build_krea2_network_preset,
@@ -83,8 +84,8 @@ def _anima_config(checkpoint=None):
     # Preserve the stock architecture preview before the default model is downloaded.
     blocks = 28
     if checkpoint:
-        path = ROOT / Path(checkpoint).expanduser()
-        if path.exists() or path.resolve() != (ROOT / DEFAULT_ANIMA_DIT).resolve():
+        path = resolve_training_path(checkpoint)
+        if path.exists() or path != resolve_training_path(DEFAULT_ANIMA_DIT):
             try:
                 blocks = anima_block_count(path)
             except AnimaCheckpointError as exc:
@@ -241,8 +242,9 @@ def _inspect_network(form):
         if not config.get("network_train_unet_only"):
             from transformers import Qwen3Config, Qwen3Model
 
-            qwen_path = Path(config.get("qwen3") or "")
-            config_path = qwen_path / "config.json" if qwen_path.is_dir() and config.get("qwen3") else ROOT / "vendor/sd-scripts/configs/qwen3_06b/config.json"
+            qwen_raw = str(config.get("qwen3") or "").strip()
+            qwen_path = resolve_training_path(qwen_raw) if qwen_raw else Path("")
+            config_path = qwen_path / "config.json" if qwen_raw and qwen_path.is_dir() else ROOT / "vendor/sd-scripts/configs/qwen3_06b/config.json"
             qwen_config = json.loads(config_path.read_text(encoding="utf-8"))
             if qwen_config.get("model_type") != "qwen3":
                 raise ShapePreviewError(

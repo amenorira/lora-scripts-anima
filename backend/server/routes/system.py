@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, Request, Response
 
 from backend import launch_utils
-from backend.constants import REPO_ROOT, SD_SCRIPTS_DIR, VENDOR_ROOT
+from backend.constants import OUTPUT_DIR, REPO_ROOT, SD_MODELS_DIR, SD_SCRIPTS_DIR, TRAIN_DIR, VENDOR_ROOT
 from backend.regularization.storage import OUTPUT_ROOT as REGULARIZATION_OUTPUT_ROOT
 from backend.server.models import APIResponse, APIResponseFail, APIResponseSuccess
 from backend.tasks import tm
@@ -191,9 +191,9 @@ async def get_files(pick_type) -> APIResponse:
             return APIResponseSuccess(data={"files": cached[1]})
 
     pick_preset = {
-        "model-file": {"type": "file", "path": "./models", "filter": "(.safetensors|.ckpt|.pt)"},
-        "model-saved-file": {"type": "file", "path": "./output", "filter": "(.safetensors|.ckpt|.pt)"},
-        "train-dir": {"type": "folder", "path": "./train", "filter": None},
+        "model-file": {"type": "file", "path": SD_MODELS_DIR, "filter": "(.safetensors|.ckpt|.pt)"},
+        "model-saved-file": {"type": "file", "path": OUTPUT_DIR, "filter": "(.safetensors|.ckpt|.pt)"},
+        "train-dir": {"type": "folder", "path": TRAIN_DIR, "filter": None},
         "reg-dir": {"type": "folder", "path": REGULARIZATION_OUTPUT_ROOT, "filter": None},
     }
     # 目录选择器里无意义的杂项目录

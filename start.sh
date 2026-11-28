@@ -246,7 +246,7 @@ do_install() {
 }
 
 # -- Venv check --
-export HF_HOME=huggingface
+export HF_HOME="${ANIMA_HF_CACHE_DIR:-${HF_HOME:-$SCRIPT_DIR/huggingface}}"
 export PYTHONUTF8=1
 STARTUP_HOOKS="$SCRIPT_DIR/tools/python_startup"
 case ":${PYTHONPATH:-}:" in
