@@ -50,6 +50,7 @@ KREA2_REPO_ID = "Comfy-Org/Krea-2"
 KREA2_TURBO_LORA_REPO_ID = "rockerBOO/krea-2-turbo-lora-r64-kohya"
 KREA2_TURBO_LORA_FILENAME = "krea2_turbo_lora_rank_64_bf16_kohya.safetensors"
 MOSS_REPO_ID = "Comfy-Org/MOSS-Image"
+MOSS_HEAL_REPO_ID = "KBlueLeaf/MOSS-Image-heal"
 
 _KREA2_FILES: list[tuple[str, str, str, str]] = [
     (
@@ -131,6 +132,26 @@ MODEL_FILES: list[tuple] = [
         "environment.animaModel.kreaTurboLora",
         "lora",
     ),
+    (
+        MOSS_HEAL_REPO_ID,
+        "comfyui/moss_image_heal_bf16.safetensors",
+        "moss_image_heal_bf16.safetensors",
+        "MOSS-Image Base Heal BF16",
+        "MOSS-Image",
+        None,
+        "environment.animaModel.mossHealBf16",
+        "model",
+    ),
+    (
+        MOSS_HEAL_REPO_ID,
+        "comfyui/moss_image_heal_int8_convrot.safetensors",
+        "moss_image_heal_int8_convrot.safetensors",
+        "MOSS-Image Base Heal ConvRot INT8",
+        "MOSS-Image",
+        None,
+        "environment.animaModel.mossHealInt8",
+        "model",
+    ),
 ] + TRAIN_USE_FILES
 
 # 保持下载函数和 CLI 使用的三元组格式，翻译键只供模型清单 UI 使用。
@@ -138,7 +159,7 @@ ANIMA_FILES = [item[:3] for item in _ANIMA_FILES]
 KREA2_FILES = [item[:3] for item in _KREA2_FILES]
 
 
-# Hugging Face 文件元数据快照（2026-10-18）；RAW ConvRot INT8 和 Turbo LoRA 于 2026-10-28 核验。
+# Hugging Face 文件元数据快照（2026-10-18）；RAW ConvRot INT8 和 Turbo LoRA 于 2026-10-28 核验；MOSS-Image-heal 于 2026-11-28 核验。
 # 调整下载清单时同步维护。
 # 仅用于下载前展示，保持本地状态查询离线可用；不用于判断文件是否完整。
 MODEL_DOWNLOAD_SIZES: dict[str, dict[str, int]] = {
@@ -166,6 +187,10 @@ MODEL_DOWNLOAD_SIZES: dict[str, dict[str, int]] = {
         "text_encoders/qwen3.5_9b_int8_convrot.safetensors": 9_748_121_532,
         "vae/flux2-vae.safetensors": 336_211_292,
         "vae/flux2-vae_small.safetensors": 249_521_340,
+    },
+    MOSS_HEAL_REPO_ID: {
+        "comfyui/moss_image_heal_bf16.safetensors": 10_164_655_808,
+        "comfyui/moss_image_heal_int8_convrot.safetensors": 5_413_698_934,
     },
     "ame-la/train_use_models": {
         "any-anima-for-lora-training/anyAnimaForLora_102.safetensors": 4_182_219_262,
