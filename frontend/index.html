@@ -1942,14 +1942,12 @@
           </div>
         </template>
       </dl>
-      <details class="confirm-details" x-ref="confirmDetails" x-show="confirmDialog.details">
-        <summary><svg class="confirm-details-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg><span x-text="t('notifications.details')"></span></summary>
+      <div class="confirm-details" x-ref="confirmDetails" x-show="confirmDialog.details">
         <pre x-text="confirmDialog.details"></pre>
-      </details>
+      </div>
     </div>
     <footer class="modal-footer confirm-footer">
       <button type="button" class="btn btn-ghost" :disabled="confirmBusy" x-show="!confirmDialog.notice" :data-dialog-autofocus="['danger', 'warning'].includes(confirmDialog.tone) ? '' : null" @click="cancelConfirm()" x-text="confirmDialog.cancelLabel"></button>
-      <button type="button" class="btn btn-ghost" x-show="confirmDialog.details" @click="copyConfirmDetails()" x-text="t('notifications.' + (confirmCopyState || 'copy'))" aria-live="polite"></button>
       <div class="confirm-actions">
         <button type="button" class="btn btn-secondary" :disabled="confirmBusy" x-show="confirmDialog.secondaryLabel" @click="confirmSecondaryAction()" x-text="confirmDialog.secondaryLabel"></button>
         <button type="button" class="btn" :class="confirmDialog.tone === 'danger' ? 'btn-stop' : 'btn-primary'" :data-dialog-autofocus="confirmDialog.notice || !['danger', 'warning'].includes(confirmDialog.tone) ? '' : null"

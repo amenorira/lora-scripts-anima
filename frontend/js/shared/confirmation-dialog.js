@@ -31,7 +31,6 @@
   window.confirmationDialogMixin = {
     showConfirmModal: false,
     confirmDialog: {},
-    confirmCopyState: '',
     confirmBusy: false,
     confirmSwitching: false,
     _confirmQueue: null,
@@ -63,10 +62,8 @@
       const request = this._confirmQueue.shift();
       this._confirmRequest = request;
       this.confirmDialog = normalize(request.config, key => this.t(key));
-      this.confirmCopyState = '';
       this.showConfirmModal = true;
-      // Do not carry expanded diagnostic text into the next request.
-      if (this.$refs?.confirmDetails) this.$refs.confirmDetails.open = false;
+      if (this.$refs?.confirmDetails) this.$refs.confirmDetails.scrollTop = 0;
     },
 
     async _finishConfirm(choice) {
@@ -82,8 +79,7 @@
             request.config = next;
             this.confirmSwitching = true;
             this.confirmDialog = normalize(next, key => this.t(key));
-            this.confirmCopyState = '';
-            if (this.$refs?.confirmDetails) this.$refs.confirmDetails.open = false;
+            if (this.$refs?.confirmDetails) this.$refs.confirmDetails.scrollTop = 0;
             this.$nextTick(() => {
               const root = this.$refs?.confirmRoot;
               if (this.$refs?.confirmBody) this.$refs.confirmBody.scrollTop = 0;
@@ -138,16 +134,6 @@
         catch (error) { this._confirmCallbackError(error); }
       }
       this._showNextConfirm();
-    },
-
-    async copyConfirmDetails() {
-      const dialog = this.confirmDialog;
-      try {
-        await navigator.clipboard.writeText([dialog.title, dialog.context, dialog.message, dialog.details].filter(Boolean).join('\n\n'));
-        if (dialog === this.confirmDialog) this.confirmCopyState = 'copied';
-      } catch (_) {
-        if (dialog === this.confirmDialog) this.confirmCopyState = 'copyFailed';
-      }
     },
   };
 })();

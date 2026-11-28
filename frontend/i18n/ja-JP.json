@@ -1297,7 +1297,14 @@
 		"ddDoubleClickZoomHint": "ダブルクリックでフィット / 2× 切替",
 		"copy": "コピー",
 		"sampleAddToComparison": "比較に追加",
-		"confirmDeleteRunAction": "記録を削除"
+		"confirmDeleteRunAction": "記録を削除",
+		"deleteSelected": "選択を削除",
+		"deleteOutputsTitle": "選択した出力ファイルを削除",
+		"deleteOutputsMessage": "選択した {count} 件（合計 {size}）を完全に削除しますか？この操作は取り消せません。",
+		"deleteOutputsFiles": "削除対象ファイル",
+		"deleteOutputsDone": "{count} 件を削除し、{size} を解放しました",
+		"deleteOutputsFailed": "出力ファイルの削除に失敗しました",
+		"deleteOutputsRunning": "学習の実行中は出力ファイルを削除できません"
 	},
 	"section": {
 		"model": "モデルとデータセット",

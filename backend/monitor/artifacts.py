@@ -301,6 +301,14 @@ def read_output_summary(run_dir: str) -> dict:
 
 def list_output_files(run_dir: str, internal_dir: Path | None = None) -> list[dict]:
     """列出已由调用方验证的产物目录，路径统一相对该目录返回。"""
+    protected_meta: Path | None = None
+    try:
+        resolved_internal = Path(internal_dir).resolve() if internal_dir is not None else resolve_internal_run_dir(run_dir)
+        if resolved_internal is not None:
+            protected_meta = (resolved_internal.resolve() / "task_meta.json").resolve()
+    except OSError:
+        protected_meta = None
+
     result = []
     for file, rel, is_dir in _output_entries(run_dir):
         stat = file.stat()
@@ -316,6 +324,7 @@ def list_output_files(run_dir: str, internal_dir: Path | None = None) -> list[di
                 "is_dir": True,
                 "category": "state",
                 "resumable": resumable_state(dir_path, internal_dir),
+                "deletable": True,
             }
             state_entry.update(_parse_state_dir(dir_path, file.name))
             result.append(state_entry)
@@ -335,6 +344,12 @@ def list_output_files(run_dir: str, internal_dir: Path | None = None) -> list[di
             category = "tensorboard"
         else:
             category = "other"
+        is_protected_meta = False
+        if protected_meta is not None:
+            try:
+                is_protected_meta = Path(file.path).resolve() == protected_meta
+            except OSError:
+                is_protected_meta = False
         entry = {
             "name": file.name,
             "path": rel,
@@ -342,6 +357,7 @@ def list_output_files(run_dir: str, internal_dir: Path | None = None) -> list[di
             "mtime": stat.st_mtime,
             "is_lora": is_lora,
             "category": category,
+            "deletable": not is_protected_meta,
         }
         # 模型文件：从文件名解析 checkpoint 编号（loss 由路由层注入，需 TB series）
         if is_lora:

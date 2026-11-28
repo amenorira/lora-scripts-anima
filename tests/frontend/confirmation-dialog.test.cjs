@@ -1,17 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadFrontend, composeMixins, deferred } = require('./helpers.cjs');
+const { loadFrontend, composeMixins, deferred, readRepo } = require('./helpers.cjs');
 
 function app() {
-  const copied = [], errors = [];
+  const errors = [];
   const { window } = loadFrontend(['shared/confirmation-dialog', 'regularization/index'], {
-    window: {}, navigator: { clipboard: { writeText: async text => copied.push(text) } },
+    window: {},
   });
   const model = composeMixins(window.confirmationDialogMixin, {
     t: key => key, toast: (...args) => errors.push(args),
     $nextTick: callback => callback(),
   });
-  return { model, copied, errors, regularization: window.regularizationMixin };
+  return { model, errors, regularization: window.regularizationMixin };
 }
 
 test('only the chosen callback executes, and stale clicks cannot execute it again', async () => {
@@ -45,7 +45,7 @@ test('synchronous and asynchronous callback failures are reported without blocki
 
 test('async steps keep the host open, block duplicate actions, and defer unrelated requests', async () => {
   const { model } = app(), pending = deferred(), callbacks = [];
-  const details = { open: true }, body = { scrollTop: 100 };
+  const details = { scrollTop: 48 }, body = { scrollTop: 100 };
   let focused = 0;
   model.$refs = { confirmDetails: details, confirmBody: body, confirmRoot: {
     open: true, getBoundingClientRect() {},
@@ -70,7 +70,7 @@ test('async steps keep the host open, block duplicate actions, and defer unrelat
   assert.equal(model.confirmBusy, false);
   assert.equal(model.confirmDialog.title, 'Cache');
   assert.equal(model.confirmDialog.size, 'standard');
-  assert.equal(details.open, false);
+  assert.equal(details.scrollTop, 0);
   assert.equal(body.scrollTop, 0);
   assert.equal(focused, 1);
   assert.deepEqual(callbacks, []);
@@ -81,6 +81,20 @@ test('async steps keep the host open, block duplicate actions, and defer unrelat
   assert.equal(model.confirmDialog.title, 'Other');
   model.confirmAction();
   assert.equal(await unrelated, 'confirm');
+});
+
+test('confirmDialog markup expands details without fold or copy button', () => {
+  const { model } = app();
+  assert.equal(model.copyConfirmDetails, undefined);
+  assert.equal(model.confirmCopyState, undefined);
+  const html = readRepo('frontend/index.html');
+  const start = html.indexOf('<dialog id="confirmDialog"');
+  const end = html.indexOf('</dialog>', start);
+  assert.ok(start >= 0 && end > start);
+  const dialogHtml = html.slice(start, end);
+  assert.doesNotMatch(dialogHtml, /copyConfirmDetails/);
+  assert.doesNotMatch(dialogHtml, /<details[^>]*class="confirm-details"/);
+  assert.match(dialogHtml, /<div class="confirm-details"[^>]*x-ref="confirmDetails"/);
 });
 
 test('flow failures reject once and release the host for the next request', async () => {

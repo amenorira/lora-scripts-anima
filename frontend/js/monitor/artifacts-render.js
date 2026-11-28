@@ -3435,6 +3435,9 @@ window.monitorArtifactsRenderMixin = {
     const visibleFiles = this._visibleOutputFiles();
     const visibleCount = visibleFiles.length;
     const selectedCount = this.selectedOutputFiles.length;
+    const selectedBytes = selectedCount > 0 ? this.selectedOutputBytes : 0;
+    const deletableSelectedCount = (this.deletableSelectedOutputFiles ?? this.selectedOutputFiles).length;
+    const runActive = this._isOutputRunActive();
     const hiddenSelected = selectedCount - visibleFiles.filter(f => this.outputFilesSelected[f.path]).length;
     let html = '<div class="m-section m-outputs-section">';
     if (this.outputFilesLoading && !this.outputFiles.length && !this._outputFilesLoaded) {
@@ -3444,9 +3447,13 @@ window.monitorArtifactsRenderMixin = {
     html += this._monitorRefreshButtonHtml(t, 'output');
     html += '<div class="m-output-selection-tools">';
     if (selectedCount > 0) {
-      html += '<span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length;
+      html += '<span class="m-output-selection-count" role="status">' + this.esc(t('selected')) + ' <strong>' + selectedCount + '</strong> / ' + this.outputFiles.length + ' · ' + this.esc(this._formatFileSize(selectedBytes));
       if (hiddenSelected > 0) html += '<small>' + this.esc(t('hiddenSelectedOutputs').replace('{n}', hiddenSelected)) + '</small>';
       html += '</span><button type="button" id="outputClearSelection" class="btn btn-sm btn-secondary" @click="deselectAllOutputFiles()">' + this.esc(t('clearSelection')) + '</button>';
+      if (!runActive) {
+        const deleteDisabled = this.outputFilesLoading || this.outputFilesDeleting || !deletableSelectedCount;
+        html += '<button type="button" id="outputDeleteSelected" class="btn btn-sm btn-secondary m-output-delete"' + (deleteDisabled ? ' disabled' : '') + ' @click="deleteSelectedOutputs()" :disabled="outputFilesLoading || outputFilesDeleting || !deletableSelectedOutputFiles.length">' + this.esc(t('deleteSelected')) + '</button>';
+      }
     }
     html += '<button type="button" id="outputDownload" class="btn btn-sm btn-primary m-output-download"' + (this.outputFilesLoading || !canUseFiles ? ' disabled' : '') + ' @click="' + (selectedCount ? 'downloadSelectedOutputs()' : 'downloadAllOutputs()') + '" :disabled="outputFilesLoading || ' + (!canUseFiles) + '"><span' + (selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadAll')) + '</span><span' + (!selectedCount ? ' class="is-hidden"' : '') + '>' + this.esc(t('downloadSelected')) + '</span></button></div></div>';
     html += '<div class="m-view-actions m-output-toolbar-filters">';
@@ -3460,7 +3467,7 @@ window.monitorArtifactsRenderMixin = {
     });
     html += '</div>';
     html += '<button type="button" id="outputSelectVisible" class="btn btn-sm btn-secondary"' + (this.outputFilesLoading || !canUseFiles || !visibleCount ? ' disabled' : '') + ' @click="selectAllOutputFiles()" :disabled="outputFilesLoading || ' + (!canUseFiles || !visibleCount) + '">' + this.esc(t('selectVisible')) + '</button>';
-    if (d.artifact_dir) html += '<button type="button" class="btn btn-sm btn-secondary" @click="navigator.clipboard.writeText(currentArtifactData().artifact_dir).then(() => toast(t(\'common.copied\'))).catch(() => toast(t(\'common.failed\'), \'error\'))">' + this.esc(t('copyOutputPath')) + '</button>';
+    if (d.artifact_dir) html += '<button type="button" class="btn btn-sm btn-secondary" @click="copyToClipboard(currentArtifactData().artifact_dir).then(() => toast(t(\'common.copied\'))).catch(() => toast(t(\'common.failed\'), \'error\'))">' + this.esc(t('copyOutputPath')) + '</button>';
     html += '</div></div>';
     html += this._artifactLocationHtml(t, d);
 

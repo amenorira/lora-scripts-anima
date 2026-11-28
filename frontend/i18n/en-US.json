@@ -1297,7 +1297,14 @@
 		"ddDoubleClickZoomHint": "Double-click to toggle Fit / 2×",
 		"copy": "Copy",
 		"sampleAddToComparison": "Add to comparison",
-		"confirmDeleteRunAction": "Delete record"
+		"confirmDeleteRunAction": "Delete record",
+		"deleteSelected": "Delete selected",
+		"deleteOutputsTitle": "Delete selected outputs",
+		"deleteOutputsMessage": "Permanently delete {count} selected item(s) ({size})? This cannot be undone.",
+		"deleteOutputsFiles": "Files to delete",
+		"deleteOutputsDone": "Deleted {count} item(s), freed {size}",
+		"deleteOutputsFailed": "Failed to delete selected outputs",
+		"deleteOutputsRunning": "Cannot delete outputs while training is running"
 	},
 	"section": {
 		"model": "Model & Dataset",

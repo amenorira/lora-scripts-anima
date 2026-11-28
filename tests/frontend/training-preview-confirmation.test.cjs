@@ -39,7 +39,7 @@ function application(profile = 'anima-lora', run = async () => response({ task_i
     toast: (...args) => errors.push(args), focusTrainingField: key => focused.push(key),
     $nextTick: callback => callback(),
     $refs: { confirmRoot: { open: true, getBoundingClientRect() {}, querySelectorAll: () => [] },
-      confirmBody: { scrollTop: 0 }, confirmDetails: { open: false } },
+      confirmBody: { scrollTop: 0 }, confirmDetails: { scrollTop: 0 } },
   });
   let visible = false;
   Object.defineProperty(model, 'showConfirmModal', {

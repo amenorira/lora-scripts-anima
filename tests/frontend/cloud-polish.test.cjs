@@ -148,6 +148,237 @@ test('tagger, AI captioning, and tag editor wire built-in picker for folders and
   assert.ok(calls.includes('teLoad:./train/picked_dir'));
 });
 
+test('monitor outputs displays selected bytes, hides delete while running, and confirms deletion via openConfirm', async () => {
+  const confirms = [];
+  const fetchCalls = [];
+  const toasts = [];
+  const { window } = loadFrontend(['shared/utils', 'monitor/outputs', 'monitor/artifacts-render'], {
+    window: { location: { protocol: 'https:', host: 'host', hostname: 'host', pathname: '/p/' } },
+    URL,
+    document: { baseURI: 'https://host/p/' },
+    fetch: async (url, opts) => {
+      fetchCalls.push({ url, method: opts?.method || 'GET', body: opts?.body });
+      if (url.includes('/outputs/delete')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'success', deleted: ['a.safetensors'], freed_bytes: 2 * 1024 * 1024 * 1024, errors: [] }) };
+      }
+      return response([]);
+    },
+  });
+  const app = composeMixins(window.utilsMixin, window.monitorOutputsMixin, window.monitorArtifactsRenderMixin, {
+    selectedRunDir: null,
+    monitorData: { state: 'RUNNING', run_dir: 'output/run_1', artifact_available: true },
+    trainingActive: true,
+    outputFiles: [
+      { name: 'a.safetensors', path: 'a.safetensors', category: 'model', size: 2 * 1024 * 1024 * 1024 },
+      { name: 'b.safetensors', path: 'b.safetensors', category: 'model', size: 1024 * 1024 * 1024 },
+    ],
+    outputFilesSelected: { 'a.safetensors': true },
+    _outputFilesLoaded: true,
+    outputFilesLoading: false,
+    outputFilesError: '',
+    outputSearch: '',
+    outputFilter: 'all',
+    escapeJsString: s => String(s || ''),
+    get currentOutputRunDir() { return 'output/run_1'; },
+    currentArtifactData() { return this.monitorData; },
+    renderDashboard() {},
+    t: translator('en-US'),
+    toast: (msg, type) => toasts.push({ msg, type }),
+    openConfirm(opts) { confirms.push(opts); },
+  });
+
+  // While RUNNING: selected bytes shown, delete button hidden.
+  const runningHtml = app._renderOutputsTab(k => app.t('monitor.' + k));
+  assert.match(runningHtml, /2\.0 GB/);
+  assert.doesNotMatch(runningHtml, /id="outputDeleteSelected"/);
+
+  // When FINISHED: delete button appears and invokes openConfirm; cancelling leaves outputs untouched, confirming POSTs delete.
+  app.trainingActive = false;
+  app.monitorData.state = 'FINISHED';
+  const finishedHtml = app._renderOutputsTab(k => app.t('monitor.' + k));
+  assert.match(finishedHtml, /id="outputDeleteSelected"/);
+
+  // Cancelled path: openConfirm called, onConfirm NOT invoked -> no delete fetch, selection intact.
+  app.deleteSelectedOutputs();
+  assert.equal(confirms.length, 1);
+  assert.equal(confirms[0].tone, 'danger');
+  assert.match(confirms[0].message, /2\.0 GB/);
+  assert.equal(confirms[0].details, undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(confirms[0].fields)), [{ label: 'Files to delete', items: ['a.safetensors'] }]);
+  assert.equal(fetchCalls.length, 0);
+  assert.equal(app.outputFilesSelected['a.safetensors'], true);
+
+  // Confirmed path: invoking onConfirm sends POST delete and clears selection.
+  await confirms[0].onConfirm();
+
+  const delCall = fetchCalls.find(c => c.url === '/p/api/monitor/outputs/delete');
+  assert.ok(delCall);
+  assert.deepEqual(JSON.parse(delCall.body), { run_dir: 'output/run_1', files: ['a.safetensors'] });
+  assert.equal(app.outputFilesSelected['a.safetensors'], undefined);
+  assert.equal(toasts.at(-1).type, 'success');
+
+  // Verify all selected files (>20) are passed without truncation via fields[].items.
+  const manyFiles = Array.from({ length: 25 }, (_, i) => ({
+    name: `ckpt_${i}.safetensors`, path: `ckpt_${i}.safetensors`, category: 'model', size: 1024 * 1024,
+  }));
+  app.outputFiles = manyFiles;
+  app.outputFilesSelected = Object.fromEntries(manyFiles.map(f => [f.path, true]));
+  app.deleteSelectedOutputs();
+  assert.equal(confirms.length, 2);
+  assert.equal(confirms[1].details, undefined);
+  assert.equal(confirms[1].fields[0].label, 'Files to delete');
+  assert.equal(confirms[1].fields[0].items.length, 25);
+  assert.deepEqual(Array.from(confirms[1].fields[0].items), manyFiles.map(f => f.path));
+
+  // Verify partial error objects with { file, error } format cleanly (no raw JSON).
+  const partialToasts = [];
+  const { window: w2 } = loadFrontend(['shared/utils', 'monitor/outputs', 'monitor/artifacts-render'], {
+    window: {},
+    fetch: async () => ({
+      ok: true, status: 200,
+      json: async () => ({ status: 'success', deleted: [], freed_bytes: 0, errors: [{ file: 'locked.safetensors', error: 'Permission denied' }] }),
+    }),
+  });
+  const p2 = composeMixins(w2.utilsMixin, w2.monitorOutputsMixin, w2.monitorArtifactsRenderMixin, {
+    outputFilesSelected: { 'locked.safetensors': true },
+    outputFilesDeleting: false,
+    renderDashboard() {},
+    loadOutputFiles: async () => {},
+    t: translator('en-US'),
+    toast: (msg, type, opts) => partialToasts.push({ msg, type, opts }),
+  });
+  await p2._performDeleteOutputs('output/run_1', ['locked.safetensors']);
+  assert.equal(partialToasts.at(-1).type, 'warning');
+  assert.equal(partialToasts.at(-1).opts.details, 'locked.safetensors: Permission denied');
+});
+
+test('monitor outputs select-all excludes non-deletable task_meta.json from deletion while keeping download intact', async () => {
+  const confirms = [];
+  const fetchCalls = [];
+  const downloads = [];
+  const toasts = [];
+  const { window } = loadFrontend(['shared/utils', 'monitor/outputs', 'monitor/artifacts-render'], {
+    window: {
+      location: { protocol: 'https:', host: 'host', hostname: 'host', pathname: '/p/' },
+    },
+    URL,
+    URLSearchParams,
+    document: { baseURI: 'https://host/p/' },
+    fetch: async (url, opts) => {
+      fetchCalls.push({ url, method: opts?.method || 'GET', body: opts?.body });
+      if (url.includes('/outputs/delete')) {
+        const parsed = JSON.parse(opts.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            status: 'success',
+            deleted: parsed.files,
+            freed_bytes: 3 * 1024 * 1024 * 1024,
+            errors: [],
+          }),
+        };
+      }
+      return response([
+        { name: 'task_meta.json', path: 'task_meta.json', category: 'config', size: 1024 * 1024, deletable: false },
+      ]);
+    },
+  });
+  window.triggerSafeDownload = (url) => downloads.push(url);
+  const app = composeMixins(window.utilsMixin, window.monitorOutputsMixin, window.monitorArtifactsRenderMixin, {
+    selectedRunDir: 'output/run_1',
+    runDetailData: { state: 'FINISHED', run_dir: 'output/run_1', artifact_available: true },
+    monitorData: { state: 'IDLE', run_dir: '', artifact_available: true },
+    trainingActive: false,
+    outputFiles: [
+      { name: 'a.safetensors', path: 'a.safetensors', category: 'model', size: 2 * 1024 * 1024 * 1024, deletable: true },
+      { name: 'b.safetensors', path: 'b.safetensors', category: 'model', size: 1024 * 1024 * 1024, deletable: true },
+      { name: 'task_meta.json', path: 'task_meta.json', category: 'config', size: 512 * 1024 * 1024, deletable: false },
+    ],
+    outputFilesSelected: {},
+    _outputFilesLoaded: true,
+    _outputFilesRequestSeq: 0,
+    _outputFilesRunDir: 'output/run_1',
+    _outputCountVersion: 0,
+    outputFilesVersion: 0,
+    outputFilesLoading: false,
+    outputFilesError: '',
+    outputSearch: '',
+    outputFilter: 'all',
+    escapeJsString: s => String(s || ''),
+    get currentOutputRunDir() { return 'output/run_1'; },
+    currentArtifactData() { return this.runDetailData; },
+    renderDashboard() {},
+    t: translator('en-US'),
+    toast: (msg, type) => toasts.push({ msg, type }),
+    openConfirm(opts) { confirms.push(opts); },
+  });
+
+  // Select all visible selects checkpoints AND task_meta.json.
+  app.selectAllOutputFiles();
+  assert.deepEqual(Array.from(app.selectedOutputFiles), ['a.safetensors', 'b.safetensors', 'task_meta.json']);
+  assert.equal(app.selectedOutputBytes, (3 * 1024 + 512) * 1024 * 1024);
+
+  // Download selected still includes all selected items including task_meta.json.
+  await app.downloadSelectedOutputs();
+  assert.equal(downloads.length, 1);
+  assert.match(downloads[0], /path=task_meta\.json/);
+  assert.match(downloads[0], /path=a\.safetensors/);
+  assert.match(downloads[0], /path=b\.safetensors/);
+
+  // Deletable getters exclude task_meta.json.
+  assert.deepEqual(Array.from(app.deletableSelectedOutputFiles), ['a.safetensors', 'b.safetensors']);
+  assert.equal(app.deletableSelectedOutputBytes, 3 * 1024 * 1024 * 1024);
+
+  const mixedHtml = app._renderOutputsTab(k => app.t('monitor.' + k));
+  const mixedDeleteBtn = mixedHtml.match(/<button[^>]*id="outputDeleteSelected"[^>]*>/);
+  assert.ok(mixedDeleteBtn);
+  assert.doesNotMatch(mixedDeleteBtn[0], /\sdisabled(?:\s|>)/);
+
+  // Confirm dialog and POST payload only include deletable files and their total size.
+  app.deleteSelectedOutputs();
+  assert.equal(confirms.length, 1);
+  assert.match(confirms[0].message, /2/);
+  assert.match(confirms[0].message, /3\.0 GB/);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(confirms[0].fields)),
+    [{ label: 'Files to delete', items: ['a.safetensors', 'b.safetensors'] }],
+  );
+  await confirms[0].onConfirm();
+
+  const delCall = fetchCalls.find(c => c.url === '/p/api/monitor/outputs/delete');
+  assert.ok(delCall);
+  assert.deepEqual(JSON.parse(delCall.body), {
+    run_dir: 'output/run_1',
+    files: ['a.safetensors', 'b.safetensors'],
+  });
+
+  // When ONLY task_meta.json is selected (including fallback without explicit deletable flag):
+  // #outputDeleteSelected is disabled, #outputDownload stays enabled, and no delete request is sent.
+  app.outputFiles = [
+    { name: 'task_meta.json', path: 'task_meta.json', category: 'config', size: 1024 },
+  ];
+  app.outputFilesSelected = { 'task_meta.json': true };
+  assert.equal(app._isOutputItemDeletable({ rel_path: 'task_meta.json' }), false);
+  assert.deepEqual(Array.from(app.selectedOutputFiles), ['task_meta.json']);
+  assert.deepEqual(Array.from(app.deletableSelectedOutputFiles), []);
+  assert.equal(app.deletableSelectedOutputBytes, 0);
+
+  const metaOnlyHtml = app._renderOutputsTab(k => app.t('monitor.' + k));
+  const metaOnlyDeleteBtn = metaOnlyHtml.match(/<button[^>]*id="outputDeleteSelected"[^>]*>/);
+  const metaOnlyDownloadBtn = metaOnlyHtml.match(/<button[^>]*id="outputDownload"[^>]*>/);
+  assert.ok(metaOnlyDeleteBtn);
+  assert.match(metaOnlyDeleteBtn[0], /\sdisabled(?:\s|>)/);
+  assert.match(metaOnlyDeleteBtn[0], /:disabled="outputFilesLoading \|\| outputFilesDeleting \|\| !deletableSelectedOutputFiles\.length"/);
+  assert.ok(metaOnlyDownloadBtn);
+  assert.doesNotMatch(metaOnlyDownloadBtn[0], /\sdisabled(?:\s|>)/);
+
+  const fetchCountBefore = fetchCalls.length;
+  app.deleteSelectedOutputs();
+  assert.equal(confirms.length, 1);
+  assert.equal(fetchCalls.length, fetchCountBefore);
+});
+
 test('picker mkdir handles FastAPI detail and non-JSON proxy errors cleanly', async () => {
   const toasts = [];
   let mode = 'detail';
@@ -174,6 +405,41 @@ test('picker mkdir handles FastAPI detail and non-JSON proxy errors cleanly', as
   app._pickerMkdirName = 'dup2';
   await app.pickerSubmitMkdir();
   assert.deepEqual(toasts.at(-1), { msg: 'Failed to create folder', type: 'error' });
+});
+
+test('tag editor directory inputs use shared field-input-wrap with local and built-in folder pickers and confirm dialog has no copy/fold details', () => {
+  const html = readRepo('frontend/index.html');
+  const css = readRepo('frontend/css/app.css');
+
+  assert.doesNotMatch(html, /te-dir-input-wrap|te-dir-browse-btn/);
+  assert.doesNotMatch(css, /te-dir-input-wrap|te-dir-browse-btn/);
+
+  const emptyStart = html.indexOf('<div class="te-empty-actions">');
+  const emptyEnd = html.indexOf('</div>\n          <!-- 未加载数据集时', emptyStart);
+  assert.ok(emptyStart >= 0 && emptyEnd > emptyStart);
+  const emptyBlock = html.slice(emptyStart, emptyEnd);
+  assert.match(
+    emptyBlock,
+    /<div class="field-input-wrap">[\s\S]*?<input[^>]*x-model="tagEditorDir"[\s\S]*?<div class="field-input-actions">[\s\S]*?x-show="localPickerAvailable"[^>]*@click="tagEditorPickLocalFolder\('empty'\)"[\s\S]*?@click="tagEditorBrowseFolder\('empty'\)"[\s\S]*?<\/div>[\s\S]*?<\/div>/,
+  );
+  assert.doesNotMatch(emptyBlock, /x-text="t\('common\.browse'\)"/);
+
+  const switchStart = html.indexOf('<div class="te-dataset-switch"');
+  const switchEnd = html.indexOf('</div>\n            </div>', switchStart);
+  assert.ok(switchStart >= 0 && switchEnd > switchStart);
+  const switchBlock = html.slice(switchStart, switchEnd);
+  assert.match(
+    switchBlock,
+    /<div class="field-input-wrap">[\s\S]*?<input id="te-switch-dir-input"[\s\S]*?<div class="field-input-actions">[\s\S]*?x-show="localPickerAvailable"[^>]*@click="tagEditorPickLocalFolder\('switch'\)"[\s\S]*?@click="tagEditorBrowseFolder\('switch'\)"[\s\S]*?<\/div>[\s\S]*?<\/div>/,
+  );
+
+  const dialogStart = html.indexOf('<dialog id="confirmDialog"');
+  const dialogEnd = html.indexOf('</dialog>', dialogStart);
+  assert.ok(dialogStart >= 0 && dialogEnd > dialogStart);
+  const dialogBlock = html.slice(dialogStart, dialogEnd);
+  assert.doesNotMatch(dialogBlock, /copyConfirmDetails/);
+  assert.doesNotMatch(dialogBlock, /<details[^>]*confirm-details/);
+  assert.match(dialogBlock, /<div class="confirm-details"[^>]*x-ref="confirmDetails"/);
 });
 
 test('tagEditorPickLocalFolder picks folders for empty/switch states and handles unavailable error', async () => {

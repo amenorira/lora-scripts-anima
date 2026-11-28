@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 from ipaddress import ip_address
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,6 +46,7 @@ from backend.monitor.run_registry import (
     RunDeletionError,
     normalize_run_status,
     resolve_artifact_file,
+    resolve_internal_run_dir,
     reusable_prompt_file,
 )
 from backend.training.config.training_config import (
@@ -716,6 +718,228 @@ async def download_single_output(run_dir: str = Query(""), path: str = Query("")
         return await asyncio.to_thread(snapshot_response, p)
     mt = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
     return FileResponse(p, media_type=mt, filename=p.name)
+
+
+def _collect_active_run_dirs() -> list[Path]:
+    """Collect resolved run_path and artifact_path directories for all active tasks."""
+    active_dirs: list[Path] = []
+    seen: set[Path] = set()
+    for task_data in tm.training_dump():
+        if task_data.get("status") not in {"CREATED", "RUNNING"}:
+            continue
+        active_id = task_data.get("id")
+        if not active_id:
+            continue
+        active_record = find_run_record_by_task_id(active_id)
+        if not active_record:
+            continue
+        for raw_dir in (active_record.get("run_path"), active_record.get("artifact_path")):
+            if not raw_dir:
+                continue
+            try:
+                resolved_dir = Path(raw_dir).resolve()
+            except OSError:
+                continue
+            if resolved_dir not in seen:
+                seen.add(resolved_dir)
+                active_dirs.append(resolved_dir)
+    return active_dirs
+
+
+def _is_run_active(record: dict) -> bool:
+    """Return True if this run (or another active task sharing its run/artifact dir) is active."""
+    active_tasks = [t for t in tm.training_dump() if t.get("status") in {"CREATED", "RUNNING"}]
+    if not active_tasks:
+        return False
+    tid = record.get("task_id")
+    if tid and any(t.get("id") == tid for t in active_tasks):
+        return True
+    try:
+        run_path = Path(record["run_path"]).resolve()
+        artifact_path = Path(record["artifact_path"]).resolve() if record.get("artifact_available") else None
+    except OSError:
+        return False
+    for task_data in active_tasks:
+        active_id = task_data.get("id")
+        if not active_id:
+            continue
+        active_record = find_run_record_by_task_id(active_id)
+        if not active_record:
+            continue
+        try:
+            if Path(active_record["run_path"]).resolve() == run_path:
+                return True
+            if (
+                artifact_path is not None
+                and active_record.get("artifact_available")
+                and Path(active_record["artifact_path"]).resolve() == artifact_path
+            ):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _entry_byte_size(path: Path) -> int:
+    """Measure exact bytes of a regular file or directory tree without following symlinks."""
+    if path.is_file() and not path.is_symlink():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    if path.is_dir() and not path.is_symlink():
+        total = 0
+        for dirpath, _dirnames, filenames in os.walk(path, followlinks=False):
+            for fname in filenames:
+                child = Path(dirpath) / fname
+                try:
+                    st = child.lstat()
+                    if not os.path.islink(child):
+                        total += st.st_size
+                except OSError:
+                    continue
+        return total
+    return 0
+
+
+def _is_link_or_junction(path: Path) -> bool:
+    is_junction = getattr(os.path, "isjunction", None)
+    return path.is_symlink() or (callable(is_junction) and bool(is_junction(path)))
+
+
+def _has_symlink_ancestor(root: Path, entry: Path) -> bool:
+    try:
+        rel = entry.relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    for part in rel.parts:
+        current = current / part
+        if _is_link_or_junction(current):
+            return True
+    return False
+
+
+@router.post("/monitor/outputs/delete")
+async def delete_output_artifacts(request: Request):
+    """安全删除指定历史运行的选定产物文件或状态目录（禁止删除运行中任务产物）。"""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid JSON body", "error_code": "invalidJson"})
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid request body", "error_code": "invalidJson"})
+
+    run_dir = body.get("run_dir", "")
+    files = body.get("files")
+    if not isinstance(run_dir, str) or not run_dir.strip():
+        return JSONResponse(status_code=400, content={"status": "error", "message": "run_dir is required", "error_code": "monitorRunNotFound"})
+    if not isinstance(files, list) or not files:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "files must be a non-empty list", "error_code": "monitorInvalidPath"})
+
+    internal_dir = await asyncio.to_thread(resolve_internal_run_dir, run_dir)
+    if internal_dir is None:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Run directory not found / 训练目录不存在", "error_code": "monitorRunNotFound"})
+
+    record = await asyncio.to_thread(load_run_record, run_dir)
+    if not record:
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Run directory not found / 训练目录不存在", "error_code": "monitorRunNotFound"})
+    if not record.get("artifact_available"):
+        return JSONResponse(status_code=404, content={"status": "error", "message": "Artifact directory unavailable / 产物目录不可用", "error_code": "monitorArtifactUnavailable"})
+
+    if await asyncio.to_thread(_is_run_active, record):
+        return JSONResponse(
+            status_code=409,
+            content={
+                "status": "error",
+                "message": "Cannot delete outputs of a running task / 无法删除运行中任务的产物",
+                "error_code": "monitorRunActive",
+            },
+        )
+
+    def _validate_and_delete() -> tuple[int, dict]:
+        artifact_root = Path(record["artifact_path"]).resolve()
+        protected_meta = (Path(record["run_path"]).resolve() / "task_meta.json").resolve()
+        validated: list[tuple[str, Path]] = []
+        seen_paths: set[Path] = set()
+
+        for raw_entry in files:
+            if not isinstance(raw_entry, str) or not raw_entry.strip() or "\x00" in raw_entry:
+                return 400, {"status": "error", "message": "Invalid file path / 无效文件路径", "error_code": "monitorInvalidPath"}
+            rel_text = raw_entry.strip().replace("\\", "/")
+            rel = Path(rel_text)
+            if rel.is_absolute() or rel.drive or rel.root or not rel.parts or any(part == ".." for part in rel.parts):
+                return 400, {"status": "error", "message": f"Invalid relative path: {raw_entry}", "error_code": "monitorInvalidPath"}
+
+            raw_target = artifact_root / rel
+            if _has_symlink_ancestor(artifact_root, raw_target) or _is_link_or_junction(raw_target):
+                return 400, {"status": "error", "message": f"Symlink paths are not allowed: {raw_entry}", "error_code": "monitorInvalidPath"}
+            try:
+                resolved = raw_target.resolve()
+            except (OSError, ValueError, RuntimeError):
+                return 400, {"status": "error", "message": f"Path escapes artifact directory: {raw_entry}", "error_code": "monitorInvalidPath"}
+            if resolved == artifact_root or not resolved.is_relative_to(artifact_root):
+                return 400, {"status": "error", "message": "Refusing to delete artifact root directory / 禁止删除产物根目录", "error_code": "monitorInvalidPath"}
+            if resolved == protected_meta:
+                return 400, {"status": "error", "message": "Cannot delete internal run metadata / 禁止删除内部运行元数据", "error_code": "monitorInvalidPath"}
+
+            if resolved not in seen_paths:
+                seen_paths.add(resolved)
+                validated.append((rel_text, resolved))
+
+        active_dirs = _collect_active_run_dirs()
+        if active_dirs:
+            for _rel_text, target in validated:
+                if any(
+                    target.is_relative_to(active_dir) or active_dir.is_relative_to(target)
+                    for active_dir in active_dirs
+                ):
+                    return 409, {
+                        "status": "error",
+                        "message": "Cannot delete outputs of a running task / 无法删除运行中任务的产物",
+                        "error_code": "monitorRunActive",
+                    }
+
+        deleted: list[str] = []
+        errors: list[dict] = []
+        freed_bytes = 0
+
+        for rel_text, target in validated:
+            if not target.exists():
+                errors.append({"file": rel_text, "error": "File not found / 文件不存在"})
+                continue
+            size_before = _entry_byte_size(target)
+            try:
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+                deleted.append(rel_text)
+                freed_bytes += size_before
+            except OSError as exc:
+                errors.append({"file": rel_text, "error": str(exc)})
+
+        if deleted:
+            from backend.monitor.artifacts import _previews_cache, _previews_cache_lock
+            from backend.monitor.history import invalidate_history_cache
+            from backend.server.routes.system import invalidate_files_cache
+
+            invalidate_history_cache()
+            invalidate_files_cache()
+            with _previews_cache_lock:
+                _previews_cache.clear()
+
+        return 200, {
+            "status": "success",
+            "deleted": deleted,
+            "freed_bytes": freed_bytes,
+            "errors": errors,
+        }
+
+    status_code, payload = await asyncio.to_thread(_validate_and_delete)
+    if status_code != 200:
+        return JSONResponse(status_code=status_code, content=payload)
+    return payload
 
 
 @router.get("/monitor/snapshot")

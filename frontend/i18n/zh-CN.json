@@ -1297,7 +1297,14 @@
 		"ddDoubleClickZoomHint": "双击切换适应 / 2×",
 		"copy": "复制",
 		"sampleAddToComparison": "加入对比",
-		"confirmDeleteRunAction": "删除记录"
+		"confirmDeleteRunAction": "删除记录",
+		"deleteSelected": "删除所选",
+		"deleteOutputsTitle": "删除所选输出文件",
+		"deleteOutputsMessage": "确定永久删除所选 {count} 项（共 {size}）吗？此操作无法撤销。",
+		"deleteOutputsFiles": "将删除的文件",
+		"deleteOutputsDone": "已删除 {count} 项，释放 {size}",
+		"deleteOutputsFailed": "删除输出文件失败",
+		"deleteOutputsRunning": "训练进行中，无法删除当前运行的输出文件"
 	},
 	"section": {
 		"model": "模型与数据集",

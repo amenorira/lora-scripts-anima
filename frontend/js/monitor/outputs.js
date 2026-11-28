@@ -2,6 +2,7 @@
 window.monitorOutputsMixin = {
   outputRefreshFeedback: false, _outputRefreshFeedbackTimer: null,
   outputCanReveal: false,
+  outputFilesDeleting: false,
 
   _resetOutputFilesForRun(runDir) {
     if (this._outputRefreshFeedbackTimer) clearTimeout(this._outputRefreshFeedbackTimer);
@@ -11,6 +12,7 @@ window.monitorOutputsMixin = {
     this._outputFilesRunDir = runDir || '';
     this.outputFiles = [];
     this.outputCanReveal = false;
+    this.outputFilesDeleting = false;
     this.outputFilesVersion++;
     this.outputFilesSelected = {};
     this.outputFilesError = '';
@@ -126,8 +128,116 @@ window.monitorOutputsMixin = {
     this.renderDashboard();
   },
 
+  _isOutputItemDeletable(item) {
+    if (!item || item.deletable === false) return false;
+    if (item.deletable === true) return true;
+    const rel = String(item.path ?? item.rel_path ?? '').trim().replace(/\\/g, '/');
+    return rel !== 'task_meta.json';
+  },
+
   get selectedOutputFiles() {
     return Object.keys(this.outputFilesSelected).filter(k => this.outputFilesSelected[k]);
+  },
+
+  get selectedOutputBytes() {
+    const selected = this.outputFilesSelected || {};
+    return (this.outputFiles || []).reduce((sum, file) => (
+      selected[file.path] ? sum + (Number(file.size) || 0) : sum
+    ), 0);
+  },
+
+  get deletableSelectedOutputFiles() {
+    const byPath = new Map((this.outputFiles || []).map(file => [file.path, file]));
+    return this.selectedOutputFiles.filter(path => this._isOutputItemDeletable(byPath.get(path) || { path }));
+  },
+
+  get deletableSelectedOutputBytes() {
+    const selected = this.outputFilesSelected || {};
+    return (this.outputFiles || []).reduce((sum, file) => (
+      selected[file.path] && this._isOutputItemDeletable(file) ? sum + (Number(file.size) || 0) : sum
+    ), 0);
+  },
+
+  _isOutputRunActive() {
+    if (!this.selectedRunDir) {
+      const state = String(this.monitorData?.state || '').toUpperCase();
+      return !!this.trainingActive || state === 'RUNNING' || state === 'CREATED';
+    }
+    const detailState = String(this.runDetailData?.state || '').toUpperCase();
+    if (detailState === 'RUNNING' || detailState === 'CREATED') return true;
+    if (this.trainingActive && this.monitorData?.run_dir && this.selectedRunDir === this.monitorData.run_dir) {
+      return true;
+    }
+    return false;
+  },
+
+  deleteSelectedOutputs() {
+    const runDir = this.currentOutputRunDir;
+    const files = this.deletableSelectedOutputFiles;
+    if (!runDir || !files.length || this.outputFilesDeleting || this._isOutputRunActive()) return;
+    const sizeText = this._formatFileSize(this.deletableSelectedOutputBytes);
+    const runDelete = () => this._performDeleteOutputs(runDir, files);
+    return this.openConfirm({
+      title: this.t('monitor.deleteOutputsTitle'),
+      message: this.t('monitor.deleteOutputsMessage')
+        .replace('{count}', String(files.length))
+        .replace('{size}', sizeText),
+      fields: [{ label: this.t('monitor.deleteOutputsFiles'), items: files }],
+      tone: 'danger',
+      actionLabel: this.t('monitor.deleteSelected'),
+      onConfirm: runDelete,
+    });
+  },
+
+  async _performDeleteOutputs(runDir, files) {
+    if (!runDir || !files.length || this.outputFilesDeleting) return;
+    this.outputFilesDeleting = true;
+    this.renderDashboard?.();
+    try {
+      const url = window.animaUrl('/api/monitor/outputs/delete');
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_dir: runDir, files }),
+      });
+      const body = await response.json().catch(() => ({}));
+      const detailMsg = typeof body.detail === 'string' ? body.detail : '';
+      if (response.status === 409) {
+        this.toast(this.localizeApiError?.(body, 'monitor.deleteOutputsRunning') || body.message || detailMsg || this.t('monitor.deleteOutputsRunning'), 'error');
+        return;
+      }
+      if (!response.ok || body.status !== 'success') {
+        this.toast(this.localizeApiError?.(body, 'monitor.deleteOutputsFailed') || body.message || detailMsg || this.t('monitor.deleteOutputsFailed'), 'error');
+        return;
+      }
+      const data = body.data && typeof body.data === 'object' ? body.data : body;
+      const deletedList = Array.isArray(data.deleted) ? data.deleted : files;
+      const deletedCount = deletedList.length;
+      const freedBytes = Number(data.freed_bytes) || 0;
+      const errors = Array.isArray(data.errors) ? data.errors : [];
+      const nextSelected = { ...this.outputFilesSelected };
+      deletedList.forEach(p => { delete nextSelected[p]; });
+      this.outputFilesSelected = nextSelected;
+      const msg = this.t('monitor.deleteOutputsDone')
+        .replace('{count}', String(deletedCount))
+        .replace('{size}', this._formatFileSize(freedBytes));
+      if (errors.length) {
+        const details = errors.map(err => {
+          if (typeof err === 'string') return err;
+          const target = err?.file || err?.path;
+          return target ? `${target}: ${err.error || err.message || ''}` : JSON.stringify(err);
+        }).join('\n');
+        this.toast(msg, 'warning', { details });
+      } else {
+        this.toast(msg, 'success');
+      }
+      await this.loadOutputFiles();
+    } catch (_) {
+      this.toast(this.t('monitor.deleteOutputsFailed'), 'error');
+    } finally {
+      this.outputFilesDeleting = false;
+      this.renderDashboard?.();
+    }
   },
 
   // 首屏详情与产物事件直接更新总数，列表保持按需加载；0 是有效结果。

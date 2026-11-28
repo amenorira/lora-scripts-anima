@@ -2112,8 +2112,7 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .modal-confirm[data-size="compact"] { --confirm-width: 400px; }
 .modal-confirm[data-size="wide"] { --confirm-width: 640px; }
-.modal-overlay[data-switching], .modal-overlay[data-switching] *,
-.modal-overlay[data-switching] .confirm-details::details-content { transition: none !important; animation: none !important; }
+.modal-overlay[data-switching], .modal-overlay[data-switching] * { transition: none !important; animation: none !important; }
 .modal-confirm[data-tone="warning"] { --confirm-tone: var(--warning); }
 .modal-confirm:is([data-tone="danger"], [data-tone="error"]) { --confirm-tone: var(--danger); }
 .confirm-heading {
@@ -2251,7 +2250,8 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .confirm-field-multiline dd.confirm-items {
   padding: 0; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
-  white-space: normal; font: 12px/1.7 var(--font-mono); overflow: hidden;
+  white-space: normal; font: 12px/1.7 var(--font-mono);
+  max-height: 240px; overflow-y: auto; overscroll-behavior: contain;
 }
 .confirm-items ol { margin: 0; padding: 0; list-style: none; }
 .confirm-items li { padding: 12px 14px; }
@@ -2265,25 +2265,19 @@ dialog.modal-overlay::backdrop { background: transparent; }
   font-variant-numeric: tabular-nums; user-select: none;
 }
 .confirm-items p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.confirm-details { margin-top: 16px; font-size: 12px; color: var(--text-secondary); interpolate-size: allow-keywords; }
-.confirm-details summary {
-  display: flex; align-items: center; gap: 6px; list-style: none;
-  cursor: pointer; width: fit-content; padding: 4px 0;
-  transition: color var(--duration-fast) var(--ease-out);
+.confirm-details {
+  margin-top: 14px;
+  max-height: 220px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-raised);
+  font-size: 12px;
+  color: var(--text-secondary);
 }
-.confirm-details summary::-webkit-details-marker { display: none; }
-.confirm-details summary:hover { color: var(--text-primary); }
-.confirm-details-chevron { width: 14px; height: 14px; flex-shrink: 0; transition: transform var(--duration-dialog-enter) var(--ease-out); }
-.confirm-details[open] .confirm-details-chevron { transform: rotate(90deg); }
-.confirm-details::details-content {
-  block-size: 0; opacity: 0; overflow: clip;
-  transition: block-size var(--duration-dialog-enter) var(--ease-out),
-    opacity var(--duration-normal) var(--ease-out),
-    content-visibility var(--duration-dialog-enter) allow-discrete;
-}
-.confirm-details[open]::details-content { block-size: auto; opacity: 1; }
 .confirm-details pre {
-  margin: 8px 0 0; padding: 12px; background: var(--bg-surface-raised);
+  margin: 0; padding: 12px; background: transparent;
   font: 12px/1.65 var(--font-mono); color: var(--text-secondary);
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
@@ -3845,6 +3839,8 @@ input[type="range"]::-webkit-slider-thumb {
 .m-output-download { display: grid; }
 .m-output-download > span { grid-area: 1 / 1; }
 .m-output-download > .is-hidden { visibility: hidden; }
+.m-output-delete { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, var(--border-default)); }
+.m-output-delete:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, transparent); border-color: var(--danger); color: var(--danger); }
 .m-outputs-scroll { flex: 1; min-height: 0; overflow: auto; padding: 1px 2px 8px 0; }
 .m-output-search { position: relative; display: flex; align-items: center; flex: 1 1 200px; min-width: 160px; }
 .m-output-search svg { position: absolute; left: 9px; width: 14px; height: 14px; fill: none; stroke: var(--text-tertiary); stroke-width: 1.8; pointer-events: none; }
