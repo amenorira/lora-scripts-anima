@@ -79,8 +79,9 @@ window.environmentLoadingMixin = {
       return;
     }
     const needsXf = !this.xfStatus, needsSd = !this.sdStatus, needsCores = !this.trainingCores, needsTriton = !this.tritonStatus,
-          needsAnimaModel = !this.animaModelStatus, needsFa = !this.faStatus, needsMossAccel = !this.mossAccelStatus;
-    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel || needsFa || needsMossAccel) {
+          needsAnimaModel = !this.animaModelStatus, needsFa = !this.faStatus, needsMossAccel = !this.mossAccelStatus,
+          needsStorage = !this.storageSpace;
+    if (needsXf || needsSd || needsCores || needsTriton || needsAnimaModel || needsFa || needsMossAccel || needsStorage) {
       // Render the full skeleton immediately, then load in a small queue.
       // This avoids stacking cold imports and disk scans while telemetry is active.
       const loaders = [];
@@ -135,6 +136,13 @@ window.environmentLoadingMixin = {
           },
         ));
       }
+      if (needsStorage) {
+        loaders.push(this._environmentJsonLoader(
+          '/api/storage/space',
+          data => { this.storageSpace = Array.isArray(data?.volumes) ? data.volumes : (Array.isArray(data?.data?.volumes) ? data.data.volumes : []); },
+          () => { this.storageSpace = null; },
+        ));
+      }
 
       this.environmentLoading = true;
       this.environmentLoadCompleted = 0;
@@ -182,6 +190,15 @@ window.environmentLoadingMixin = {
           if (payload.status === 'success') { this.trainingCores = payload.data || null; this.trainingCoresError = null; }
           else { this.trainingCoresError = payload.message || this.t('environment.coresLoadFailed'); this.trainingCores = null; }
         } catch (e) { this.trainingCoresError = String(e && e.message || e); this.trainingCores = null; }
+      })(),
+      (async () => {
+        try {
+          const r = await fetch(window.animaUrl('/api/storage/space'));
+          if (!r.ok) return;
+          const payload = await r.json();
+          const vols = Array.isArray(payload?.volumes) ? payload.volumes : (Array.isArray(payload?.data?.volumes) ? payload.data.volumes : null);
+          if (vols) this.storageSpace = vols;
+        } catch (_) {}
       })(),
     ];
     try { await Promise.allSettled(tasks); }

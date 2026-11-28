@@ -440,31 +440,60 @@ def find_available_ports(port_init: int, port_range: int):
 _ENV_CHECKED = False
 
 
+def _existing_ancestor(path: Path) -> Path:
+    """Walk up until an existing directory/path is found for disk_usage/stat."""
+    current = path
+    while not current.exists() and current.parent != current:
+        current = current.parent
+    return current
+
+
+def _check_mount_disk_space(label: str, path: Path, seen_devices: set[int]) -> Optional[int]:
+    """Check disk free space for a mount once per unique st_dev, logging warnings."""
+    try:
+        probe = _existing_ancestor(path)
+        dev = os.stat(probe).st_dev
+    except OSError:
+        return None
+    if dev in seen_devices:
+        return None
+    seen_devices.add(dev)
+    try:
+        free_gb = shutil.disk_usage(probe).free // (1024 ** 3)
+    except OSError:
+        return None
+
+    scope_en = f" ({label}: {path})" if label != "workspace" else ""
+    scope_zh = f"（{label}: {path}）" if label != "workspace" else ""
+    if free_gb < 10:
+        log.error(
+            "Critically low disk space%s: %d GB free. Model downloads or checkpoints may fail; "
+            "free space before training. / 磁盘空间严重不足%s：仅剩 %d GB，模型下载或 checkpoint "
+            "保存可能失败，请先清理空间。",
+            scope_en, free_gb, scope_zh, free_gb,
+        )
+    elif free_gb < 30:
+        log.warning(
+            "Low disk space%s: %d GB free. Large model downloads and checkpoints need more room. / "
+            "磁盘空间偏低%s：仅剩 %d GB，大模型下载和 checkpoint 保存可能需要更多空间。",
+            scope_en, free_gb, scope_zh, free_gb,
+        )
+    else:
+        log.info("Disk free%s: %d GB / 磁盘剩余空间", scope_en, free_gb, extra={"console": False})
+    return free_gb
+
+
 def check_environment():
-    """检查启动关键的磁盘余量，返回可用 GiB（检查时只跑一次）。"""
+    """检查启动关键的磁盘余量（含独立挂载的 OUTPUT_DIR / SD_MODELS_DIR），返回可用 GiB（检查时只跑一次）。"""
     global _ENV_CHECKED
     if _ENV_CHECKED:
         return None
     _ENV_CHECKED = True
 
-    try:
-        free_gb = shutil.disk_usage(base_dir_path()).free // (1024 ** 3)
-    except OSError:
-        return None
+    from backend.constants import OUTPUT_DIR, SD_MODELS_DIR
 
-    if free_gb < 10:
-        log.error(
-            "Critically low disk space: %d GB free. Model downloads or checkpoints may fail; "
-            "free space before training. / 磁盘空间严重不足：仅剩 %d GB，模型下载或 checkpoint "
-            "保存可能失败，请先清理空间。",
-            free_gb, free_gb,
-        )
-    elif free_gb < 30:
-        log.warning(
-            "Low disk space: %d GB free. Large model downloads and checkpoints need more room. / "
-            "磁盘空间偏低：仅剩 %d GB，大模型下载和 checkpoint 保存可能需要更多空间。",
-            free_gb, free_gb,
-        )
-    else:
-        log.info("Disk free: %d GB / 磁盘剩余空间", free_gb, extra={"console": False})
-    return free_gb
+    seen_devices: set[int] = set()
+    base_free_gb = _check_mount_disk_space("workspace", base_dir_path(), seen_devices)
+    for label, path in (("output", OUTPUT_DIR), ("models", SD_MODELS_DIR)):
+        _check_mount_disk_space(label, path, seen_devices)
+    return base_free_gb

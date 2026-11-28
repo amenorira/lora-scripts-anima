@@ -184,7 +184,73 @@ class SystemCloudRoutesTests(unittest.TestCase):
             self.assertTrue((ext_train / "cloud_ds").is_dir())
 
 
+    def test_storage_space_deduplicates_same_device_and_splits_distinct_mounts(self):
+        usage_a = SimpleNamespace(total=100 * 1024**3, used=40 * 1024**3, free=60 * 1024**3)
+        usage_b = SimpleNamespace(total=500 * 1024**3, used=100 * 1024**3, free=400 * 1024**3)
+
+        def fake_stat(p, **_kwargs):
+            s = str(p)
+            if str(self.output) in s or str(self.train) in s:
+                return SimpleNamespace(st_dev=101)
+            return SimpleNamespace(st_dev=202)
+
+        def fake_usage(p):
+            return usage_a if str(self.output) in str(p) or str(self.train) in str(p) else usage_b
+
+        with self._patch_roots(), \
+             patch.object(system_routes.os, "stat", side_effect=fake_stat), \
+             patch.object(system_routes.shutil, "disk_usage", side_effect=fake_usage):
+            resp = self.client.get("/api/storage/space")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["status"], "success")
+        volumes = body["volumes"]
+        self.assertEqual(len(volumes), 2)
+        self.assertEqual(volumes[0]["key"], "output")
+        self.assertEqual(volumes[0]["keys"], ["output", "train"])
+        self.assertEqual(volumes[0]["free_bytes"], usage_a.free)
+        self.assertEqual(volumes[1]["key"], "models")
+        self.assertEqual(volumes[1]["keys"], ["models"])
+        self.assertEqual(volumes[1]["free_bytes"], usage_b.free)
+
+
 class LaunchUtilsAndCloudPolishTests(unittest.TestCase):
+    def test_check_environment_checks_separate_output_and_models_mounts(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            ws = base / "ws"
+            out = base / "drive_out"
+            models = base / "drive_models"
+            for d in (ws, out, models):
+                d.mkdir()
+
+            devs = {str(ws): 1, str(out): 2, str(models): 3}
+            frees = {str(ws): 50 * 1024**3, str(out): 5 * 1024**3, str(models): 20 * 1024**3}
+
+            def fake_stat(p, **_kwargs):
+                return SimpleNamespace(st_dev=devs[str(p)])
+
+            def fake_usage(p):
+                return SimpleNamespace(free=frees[str(p)], total=100 * 1024**3, used=0)
+
+            import backend.constants as constants
+
+            with patch.object(launch_utils, "_ENV_CHECKED", False), \
+                 patch.object(launch_utils, "base_dir_path", return_value=ws), \
+                 patch.object(constants, "OUTPUT_DIR", out), \
+                 patch.object(constants, "SD_MODELS_DIR", models), \
+                 patch.object(launch_utils.os, "stat", side_effect=fake_stat), \
+                 patch.object(launch_utils.shutil, "disk_usage", side_effect=fake_usage), \
+                 patch.object(launch_utils.log, "error") as log_err, \
+                 patch.object(launch_utils.log, "warning") as log_warn:
+                free_gb = launch_utils.check_environment()
+
+            self.assertEqual(free_gb, 50)
+            self.assertEqual(log_err.call_count, 1)
+            self.assertIn("output", str(log_err.call_args))
+            self.assertEqual(log_warn.call_count, 1)
+            self.assertIn("models", str(log_warn.call_args))
+
     def test_supervisor_launcher_hint_is_platform_aware(self):
         missing_exe = Path("/nonexistent/venv/bin/python")
         fake_engine = SimpleNamespace(python_executable=missing_exe, label="Krea 2")

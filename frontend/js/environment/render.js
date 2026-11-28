@@ -370,12 +370,14 @@ window.environmentRenderMixin = {
       const num = ready ? T(key).replace('{count}', done) : '–';
       return `<span>${label} ${num}</span>`;
     };
+    const diskHtml = this._renderOverviewDisk(T);
     const summaryHtml = `<div class="env-hero-summary">`
       + summary(accelDone, 'overview.accelCount', accelReady, T('overview.accel'))
       + `<span class="env-summary-sep">·</span>`
       + summary(coreDone, 'overview.availableCount', coreReady, T('overview.core'))
       + `<span class="env-summary-sep">·</span>`
       + `<span>${T('overview.models')} ${modelsReady ? this.esc(T('animaModel.localFileCount').replace('{count}', modelDone)) : '–'}</span>`
+      + diskHtml
       + `</div>`;
 
     // 加载态：spinner + 文案并入 Hero 标题行（页面级仅此一个加载指示，
@@ -400,6 +402,29 @@ window.environmentRenderMixin = {
       +     `<span>${this.esc(T('refreshAll'))}</span></button>`
       + `</div>`
       + `</section>`;
+  },
+
+  _renderOverviewDisk(T) {
+    const vols = Array.isArray(this.storageSpace)
+      ? this.storageSpace.filter(v => v && Number.isFinite(Number(v.free_bytes)) && Number(v.free_bytes) >= 0)
+      : [];
+    if (!vols.length) return '';
+    const lowThreshold = 10 * 1024 * 1024 * 1024;
+    const isLow = vols.some(v => Number(v.free_bytes) < lowThreshold);
+    let summaryText = '';
+    let titleText = '';
+    if (vols.length === 1) {
+      const v = vols[0];
+      const free = this._humanBytes(Number(v.free_bytes));
+      const total = Number(v.total_bytes) > 0 ? this._humanBytes(Number(v.total_bytes)) : '';
+      summaryText = total ? `${free} / ${total}` : free;
+      titleText = v.path || '';
+    } else {
+      summaryText = vols.map(v => `${v.key || ''} ${this._humanBytes(Number(v.free_bytes))}`.trim()).join(' · ');
+      titleText = vols.map(v => `${v.key || ''}: ${v.path || ''}`).join('\n');
+    }
+    return `<span class="env-summary-sep">·</span>`
+      + `<span class="env-hero-disk${isLow ? ' is-low' : ''}" title="${this.esc(titleText)}">${this.esc(T('overview.diskFree'))} ${this.esc(summaryText)}</span>`;
   },
 
   // ═══════════════════════════════════════════════════════

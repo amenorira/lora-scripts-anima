@@ -375,6 +375,40 @@ def _is_link_or_junction(path: Path) -> bool:
     return path.is_symlink() or (callable(is_junction) and bool(is_junction(path)))
 
 
+def _existing_ancestor(path: Path) -> Path:
+    current = path
+    while not current.exists() and current.parent != current:
+        current = current.parent
+    return current
+
+
+def _collect_storage_volumes() -> list[dict]:
+    """Probe disk space for output, models, and train, deduplicating identical mounts."""
+    volumes: list[dict] = []
+    by_device: dict[int, dict] = {}
+    for key, path in (("output", OUTPUT_DIR), ("models", SD_MODELS_DIR), ("train", TRAIN_DIR)):
+        try:
+            probe = _existing_ancestor(path)
+            dev = os.stat(probe).st_dev
+            usage = shutil.disk_usage(probe)
+        except OSError:
+            continue
+        existing = by_device.get(dev)
+        if existing is not None:
+            existing["keys"].append(key)
+            continue
+        entry = {
+            "key": key,
+            "keys": [key],
+            "path": _to_picker_path(path),
+            "free_bytes": usage.free,
+            "total_bytes": usage.total,
+        }
+        by_device[dev] = entry
+        volumes.append(entry)
+    return volumes
+
+
 _DATASET_STATS_MAX_ENTRIES = 5000
 _DATASET_STATS_TIMEOUT_SEC = 1.5
 
@@ -585,6 +619,13 @@ async def create_directory(request: Request):
     if status_code != 200:
         return JSONResponse(status_code=status_code, content=payload)
     return payload
+
+
+@router.get("/storage/space")
+async def storage_space():
+    """Return free/total disk space for output, models, and train mounts (deduplicated by device)."""
+    volumes = await asyncio.to_thread(_collect_storage_volumes)
+    return {"status": "success", "volumes": volumes}
 
 
 @router.get("/graphic_cards")

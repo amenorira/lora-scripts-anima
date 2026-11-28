@@ -148,6 +148,33 @@ test('tagger, AI captioning, and tag editor wire built-in picker for folders and
   assert.ok(calls.includes('teLoad:./train/picked_dir'));
 });
 
+test('output_dir preflight shows free_bytes inline with low-space warning below 10 GB', () => {
+  const { window } = loadFrontend(['shared/utils', ...TRAINING_CORE_SCRIPTS], { window: {} });
+  const app = composeMixins(window.utilsMixin, window.trainingCoreMixin, {
+    t: translator('en-US'),
+  });
+
+  app.outputPathInfo = { is_default: true, available: true, writable: true, path_is_directory: true, free_bytes: 50 * 1024 * 1024 * 1024 };
+  assert.equal(app.outputPathHintVisible(), true);
+  assert.equal(app.outputPathStatusClass(), 'is-ok');
+  assert.match(app.outputPathSummaryText(), /50\.0 GB/);
+
+  app.outputPathInfo = { is_default: true, available: true, writable: true, path_is_directory: true, free_bytes: 5 * 1024 * 1024 * 1024 };
+  assert.equal(app.outputPathStatusClass(), 'is-low-space');
+  assert.match(app.outputPathSummaryText(), /Low disk space: 5\.0 GB/);
+});
+
+test('environment hero renders compact disk free space from /api/storage/space', () => {
+  const { window } = loadFrontend(['shared/utils', 'environment/core', 'environment/render'], { window: {} });
+  const app = composeMixins(window.utilsMixin, window.environmentCoreMixin, window.environmentRenderMixin, {
+    t: translator('en-US'),
+    storageSpace: [{ key: 'output', path: '/workspace/output', free_bytes: 6 * 1024 * 1024 * 1024, total_bytes: 100 * 1024 * 1024 * 1024 }],
+  });
+  const html = app._renderOverview(k => app.t('environment.' + k));
+  assert.match(html, /env-hero-disk is-low/);
+  assert.match(html, /6\.00 GB \/ 100 GB/);
+});
+
 test('monitor outputs displays selected bytes, hides delete while running, and confirms deletion via openConfirm', async () => {
   const confirms = [];
   const fetchCalls = [];

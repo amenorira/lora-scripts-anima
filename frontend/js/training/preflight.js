@@ -259,12 +259,31 @@ window.trainingPreflight = {
     }
   },
 
+  _formatDiskSpace(bytes) {
+    const b = Number(bytes);
+    if (!Number.isFinite(b) || b < 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = b, i = 0;
+    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+    return (i === 0 ? Math.round(value) : value >= 100 ? value.toFixed(0) : value.toFixed(1)) + ' ' + units[i];
+  },
+
+  _outputPathHasFreeBytes(info = this.outputPathInfo) {
+    return info != null && info.free_bytes != null && Number.isFinite(Number(info.free_bytes)) && Number(info.free_bytes) >= 0;
+  },
+
+  _outputPathIsLowSpace(info = this.outputPathInfo) {
+    return this._outputPathHasFreeBytes(info) && Number(info.free_bytes) < 10 * 1024 * 1024 * 1024;
+  },
+
   outputPathStatusClass() {
     const info = this.outputPathInfo;
     if (this.outputPathInfoError || (info && (!info.available || !info.writable || info.path_is_directory === false))) {
       return 'is-error';
     }
-    return 'is-custom';
+    if (this._outputPathIsLowSpace(info)) return 'is-low-space';
+    if (info && !info.is_default) return 'is-custom';
+    return 'is-ok';
   },
 
   outputPathHintVisible() {
@@ -272,7 +291,7 @@ window.trainingPreflight = {
     if (this.outputPathInfoError) return true;
     if (!info) return false;
     if (!info.available || !info.writable || info.path_is_directory === false) return true;
-    return !info.is_default;
+    return !info.is_default || this._outputPathHasFreeBytes(info);
   },
 
   outputPathSummaryText() {
@@ -293,9 +312,14 @@ window.trainingPreflight = {
     if (!info.writable) {
       return this.t('training.outputPathNotWritable');
     }
-    if (info.is_default) return '';
-    return this.t(
-      'training.outputPathCustomSummary');
+    const parts = [];
+    if (!info.is_default) parts.push(this.t('training.outputPathCustomSummary'));
+    if (this._outputPathHasFreeBytes(info)) {
+      const freeText = this._formatDiskSpace(info.free_bytes);
+      const key = this._outputPathIsLowSpace(info) ? 'training.outputPathFreeSpaceLow' : 'training.outputPathFreeSpace';
+      parts.push(this.t(key).replace('{free}', freeText));
+    }
+    return parts.join(' · ');
   },
 
   outputPathBlockingText() {

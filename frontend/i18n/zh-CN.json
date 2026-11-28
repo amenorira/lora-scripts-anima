@@ -3275,7 +3275,8 @@
 			"accel": "性能加速",
 			"core": "训练核心",
 			"models": "模型库",
-			"accelCount": "已安装或启用 {count} 项"
+			"accelCount": "已安装或启用 {count} 项",
+			"diskFree": "磁盘可用"
 		},
 		"envTabEnv": "运行环境",
 		"envTabModels": "模型库",
@@ -3565,7 +3566,9 @@
 			"cacheInitializationFailed": "无法初始化 Krea 2 缓存。",
 			"previewConfigInvalid": "预览设置无效。",
 			"samplePromptNotFound": "预览提示词文件不存在：{path}"
-		}
+		},
+		"outputPathFreeSpace": "可用空间 {free}",
+		"outputPathFreeSpaceLow": "磁盘空间偏低：仅剩 {free}"
 	},
 	"home": {
 		"subtitle": "本地 LoRA 训练工具",

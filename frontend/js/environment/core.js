@@ -15,6 +15,7 @@ window.environmentCoreMixin = {
 
   // ── Multi-core Registry State ───────────────────────
   trainingCores: null, trainingCoresError: null,
+  storageSpace: null,
 
   // ── Triton State ─────────────────────────────────────
   tritonStatus: null, tritonBusy: false, tritonError: null,

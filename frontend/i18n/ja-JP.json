@@ -3275,7 +3275,8 @@
 			"accel": "高速化",
 			"core": "学習エンジン",
 			"models": "モデル",
-			"accelCount": "インストール済みまたは有効 {count} 件"
+			"accelCount": "インストール済みまたは有効 {count} 件",
+			"diskFree": "空き容量"
 		},
 		"envTabEnv": "実行環境",
 		"envTabModels": "モデル",
@@ -3565,7 +3566,9 @@
 			"cacheInitializationFailed": "Krea 2 のキャッシュを初期化できませんでした。",
 			"previewConfigInvalid": "プレビューの設定が無効です。",
 			"samplePromptNotFound": "プレビュー用プロンプトのファイルが見つかりません：{path}"
-		}
+		},
+		"outputPathFreeSpace": "空き容量 {free}",
+		"outputPathFreeSpaceLow": "空き容量が少なくなっています（残り {free}）"
 	},
 	"home": {
 		"subtitle": "ローカル LoRA 学習ツール",

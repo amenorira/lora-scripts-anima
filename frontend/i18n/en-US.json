@@ -3275,7 +3275,8 @@
 			"accel": "Acceleration",
 			"core": "Training core",
 			"models": "Models",
-			"accelCount": "{count} installed or enabled"
+			"accelCount": "{count} installed or enabled",
+			"diskFree": "Disk free"
 		},
 		"envTabEnv": "Runtime",
 		"envTabModels": "Models",
@@ -3565,7 +3566,9 @@
 			"cacheInitializationFailed": "Could not initialize the Krea 2 caches.",
 			"previewConfigInvalid": "The preview settings are invalid.",
 			"samplePromptNotFound": "Preview prompt file not found: {path}"
-		}
+		},
+		"outputPathFreeSpace": "{free} free",
+		"outputPathFreeSpaceLow": "Low disk space: {free} free"
 	},
 	"home": {
 		"subtitle": "A local LoRA training tool",
