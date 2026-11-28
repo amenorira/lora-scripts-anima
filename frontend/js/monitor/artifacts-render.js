@@ -1199,13 +1199,13 @@ window.monitorArtifactsRenderMixin = {
       + '<button type="button" id="previewReferenceButton" class="btn btn-sm btn-secondary preview-tool-action" :class="{ active: previewCompareActive }" :disabled="!previewCompareActive && !canPinCurrentPreview()" :title="previewReferenceActionTitle()" :aria-pressed="previewCompareActive ? \'true\' : \'false\'" @click="togglePreviewReference()" x-text="previewCompareActive ? t(\'monitor.sampleEndCompare\') : t(\'monitor.sampleCompareReference\')"></button>'
       + '<button type="button" class="btn btn-sm btn-ghost preview-tool-action" x-show="previewCompareActive && !previewComparisonWaiting" :disabled="!canPinCurrentPreview()" @click="pinCurrentPreviewReference()" title="' + this.esc(t('samplePinRightHint')) + '" x-text="t(\'monitor.sampleAddToComparison\')"></button>'
       + '<a class="btn btn-sm btn-ghost preview-tool-action" id="previewLightboxOriginal" target="_blank" rel="noopener">' + this.esc(t('openOriginal')) + '</a>'
-      + '<div class="preview-lightbox-zoom" x-show="!previewCompareActive">'
+      + '<div class="preview-lightbox-zoom">'
       + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale / 1.18)" :disabled="previewViewAtFit()" title="' + this.esc(this.t('tagEditor.zoomOut')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomOut')) + '">' + zoomOut + '</button>'
       + '<button type="button" class="preview-zoom-value" @click="resetPreviewView(true)" :title="previewViewZoomLabel() + \' · \' + t(\'imageViewer.zoomHint\')" aria-keyshortcuts="0" x-text="previewViewZoomLabel()"></button>'
       + '<button type="button" class="btn-icon preview-icon-button" @click="setPreviewViewScale(previewViewScale * 1.18)" :disabled="previewViewScale >= 8" title="' + this.esc(this.t('tagEditor.zoomIn')) + '" aria-label="' + this.esc(this.t('tagEditor.zoomIn')) + '">' + zoomIn + '</button></div>'
       + '<button type="button" class="btn-icon preview-icon-button preview-close" data-dialog-autofocus @click="closePreviewLightbox()" title="' + this.esc(this.t('imageViewer.closeHint')) + '" aria-label="' + this.esc(t('close')) + '" aria-keyshortcuts="Escape">' + close + '</button></div></div>'
       + '<div class="preview-lightbox-body"><div id="previewLightboxCanvas" class="preview-lightbox-canvas">'
-      + '<div id="previewLightboxViewport" class="preview-lightbox-panes" :class="{zoomed: !previewViewAtFit(), panning: previewViewPanning}" @scroll.passive="queuePreviewSideNavLayout()" @wheel="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @lostpointercapture="stopPreviewPan($event)" @dblclick="if (!previewCompareActive && !$event.target.closest(\'button\')) { $event.preventDefault(); resetPreviewView(true); }" @dragstart.prevent><div id="previewLightboxExtent" class="preview-lightbox-extent"><div id="previewLightboxGroup" class="preview-lightbox-group"><div id="previewReferencePanes" class="preview-reference-panes" hidden></div>'
+      + '<div id="previewLightboxViewport" class="preview-lightbox-panes" :class="{zoomed: !previewViewAtFit(), panning: previewViewPanning}" @scroll.passive="queuePreviewSideNavLayout()" @wheel="zoomPreviewView($event)" @pointerdown="startPreviewPan($event)" @pointermove="movePreviewPan($event)" @pointerup="stopPreviewPan($event)" @pointercancel="stopPreviewPan($event)" @lostpointercapture="stopPreviewPan($event)" @dblclick="if (!$event.target.closest(\'button\')) { $event.preventDefault(); resetPreviewView(true); }" @dragstart.prevent><div id="previewLightboxExtent" class="preview-lightbox-extent"><div id="previewLightboxGroup" class="preview-lightbox-group"><div id="previewReferencePanes" class="preview-reference-panes" hidden></div>'
       + '<div class="preview-lightbox-pane preview-current-pane" @contextmenu="openPreviewPaneMenu($event)"><div id="previewCurrentStage" class="preview-current-stage">' + stage() + '</div><div id="previewComparisonPlaceholder" class="preview-comparison-placeholder" hidden>' + this.esc(t('sampleSelectComparison')) + '</div><div id="previewCurrentCaptionSlot" class="preview-caption-slot" hidden><div class="preview-pane-caption" id="previewCurrentCaption"' + this._previewPaneCaptionEventsHtml() + ' hidden>' + this._previewCaptionTextHtml(true) + '</div></div></div></div></div></div>'
       + '<div id="previewLossLayer" class="preview-loss-layer" x-effect="_syncPreviewLossOverlays()" @pointerdown.stop @click.stop @dblclick.stop @wheel.stop="if (previewCompareActive) previewSideNavWheel($event)" hidden></div>'
       + sideNav(-1, left) + sideNav(1, right)
@@ -2410,8 +2410,9 @@ window.monitorArtifactsRenderMixin = {
     // Pane sizes already fit the viewport. Preserve their readable minimum and scroll overflow.
     this._previewViewFitScale = this.previewCompareActive ? 1
       : Math.max(0.0001, Math.min(1, (width - captionWidth) / baseWidth, (height - captionHeight) / baseHeight));
-    if (this.previewCompareActive) this.previewViewScale = 1;
-    else if (this._previewViewFitted || this.previewViewScale < this._previewViewFitScale) this.previewViewScale = this._previewViewFitScale;
+    if (this._previewViewFitted || this.previewViewScale < this._previewViewFitScale) {
+      this.previewViewScale = this._previewViewFitScale;
+    }
     this._syncPreviewGroupViewport();
     if (this._previewReferenceMedia) this._refreshPreviewReferenceVisibility(this._previewReferenceMedia);
   },
@@ -2507,7 +2508,7 @@ window.monitorArtifactsRenderMixin = {
     if (!['horizontal', 'vertical'].includes(layout) || layout === this.previewComparisonLayout) return;
     this.cancelPreviewPaneDrag();
     this.previewComparisonLayout = layout;
-    this.previewViewScale = 1; this._previewViewFitted = false;
+    this.previewViewScale = 1; this._previewViewFitted = true;
     this._saveSampleViewPreferences();
     const references = document.getElementById('previewReferencePanes');
     this._layoutPreviewComparisonPanes((references?.children.length || 0) + 1);
@@ -2582,6 +2583,17 @@ window.monitorArtifactsRenderMixin = {
     return position >= 0 && position < indices.length - 1;
   },
 
+  _previewActualPixelScale() {
+    const img = document.getElementById('previewLightboxImg');
+    const pane = img?.closest?.('.preview-lightbox-pane');
+    const paneW = parseFloat(pane?.style?.getPropertyValue?.('--preview-pane-width')) || img?.clientWidth || 0;
+    const fit = this._previewViewFitScale || 1;
+    if (img?.naturalWidth > 0 && paneW > 0) {
+      return Math.max(fit, Math.min(8, img.naturalWidth / paneW));
+    }
+    return Math.max(fit, 1);
+  },
+
   previewLightboxKeydown(event) {
     if (this._previewPaneDrag && event.key === 'Escape') {
       event.preventDefault(); event.stopPropagation(); this.cancelPreviewPaneDrag(); return;
@@ -2591,12 +2603,14 @@ window.monitorArtifactsRenderMixin = {
     if (event.target?.closest?.('input,select,textarea,summary,[contenteditable="true"],[role="combobox"],[role="listbox"],[role="menu"]')) return;
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault(); event.stopPropagation?.(); this.previewLightboxNav(event.key === 'ArrowLeft' ? -1 : 1);
-    } else if (!this.previewCompareActive && (event.key === '+' || event.key === '=')) {
+    } else if (event.key === '+' || event.key === '=') {
       event.preventDefault(); this.setPreviewViewScale(this.previewViewScale * 1.18);
-    } else if (!this.previewCompareActive && event.key === '-') {
+    } else if (event.key === '-') {
       event.preventDefault(); this.setPreviewViewScale(this.previewViewScale / 1.18);
-    } else if (!this.previewCompareActive && event.key === '0') {
+    } else if (event.key === '0') {
       event.preventDefault(); this.resetPreviewView(true);
+    } else if (event.key === '1') {
+      event.preventDefault(); this.setPreviewViewScale(this._previewActualPixelScale());
     }
   },
 
@@ -2649,7 +2663,6 @@ window.monitorArtifactsRenderMixin = {
   },
 
   setPreviewViewScale(next, event) {
-    if (this.previewCompareActive) return;
     this.cancelPreviewPaneDrag();
     this._cancelPreviewReset();
     this.stopPreviewPan();
@@ -2683,17 +2696,6 @@ window.monitorArtifactsRenderMixin = {
 
   zoomPreviewView(event, fromSideNav = false) {
     this.cancelPreviewPaneDrag();
-    if (this.previewCompareActive) {
-      if (event.ctrlKey || event.metaKey) {event.preventDefault(); return;}
-      const viewport = document.getElementById('previewLightboxViewport');
-      if (viewport && this.previewComparisonLayout === 'horizontal' && !event.deltaX) {
-        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientWidth : 1;
-        const before = viewport.scrollLeft;
-        viewport.scrollLeft += (event.deltaY || 0) * unit;
-        if (viewport.scrollLeft !== before) event.preventDefault();
-      }
-      return;
-    }
     if (!fromSideNav && event.target?.closest?.('button,.preview-pane-caption')) return;
     if (!event.deltaY || Math.abs(event.deltaX || 0) > Math.abs(event.deltaY)) return;
     event.preventDefault(); event.stopPropagation();
@@ -2701,12 +2703,11 @@ window.monitorArtifactsRenderMixin = {
   },
 
   startPreviewPan(event) {
-    if (this.previewCompareActive) return;
+    const viewport = event?.currentTarget;
+    if (!viewport || event.button !== 0 || event.target?.closest?.('button')
+        || (viewport.scrollWidth <= viewport.clientWidth + 1 && viewport.scrollHeight <= viewport.clientHeight + 1)) return;
     this._cancelPreviewReset();
     this.stopPreviewPan();
-    const viewport = event.currentTarget;
-    if (event.button !== 0 || event.target.closest?.('button')
-        || (viewport.scrollWidth <= viewport.clientWidth + 1 && viewport.scrollHeight <= viewport.clientHeight + 1)) return;
     window.AnimaUI?.settleDialog?.(viewport);
     const rect = viewport.getBoundingClientRect();
     this._previewPanRatio = viewport.offsetWidth && rect.width ? rect.width / viewport.offsetWidth : 1;
@@ -2748,7 +2749,7 @@ window.monitorArtifactsRenderMixin = {
   },
 
   _previewPaneImageEventsHtml() {
-    return ' :title="previewCompareActive ? t(\'monitor.sampleReorderHint\') : \'\'"'
+    return ' :title="previewCompareActive && previewViewAtFit() ? t(\'monitor.sampleReorderHint\') : \'\'"'
       + ' @pointerdown="startPreviewPaneDrag($event)" @pointermove="movePreviewPaneDrag($event)"'
       + ' @pointerup="endPreviewPaneDrag($event)" @pointercancel="cancelPreviewPaneDrag()" @lostpointercapture="cancelPreviewPaneDrag()"';
   },
@@ -2799,7 +2800,7 @@ window.monitorArtifactsRenderMixin = {
   },
 
   startPreviewPaneDrag(event) {
-    if (!this.previewCompareActive || event.button !== 0 || event.target.closest?.('button')) return;
+    if (!this.previewCompareActive || !this.previewViewAtFit() || event.button !== 0 || event.target.closest?.('button')) return;
     const pane = event.currentTarget.closest('.preview-lightbox-pane');
     const key = pane?.classList.contains('preview-current-pane') ? null : pane?.dataset.previewReferenceKey;
     if (!pane || key === undefined || (key === null && (this.previewComparisonWaiting || !this.canPinCurrentPreview()))) return;

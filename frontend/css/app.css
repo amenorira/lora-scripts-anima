@@ -4220,6 +4220,8 @@ dialog.preview-lightbox::backdrop { background: transparent; }
 .preview-lightbox-panes.zoomed { overflow: auto; }
 .preview-lightbox-panes.panning { cursor: grabbing; touch-action: none; }
 .preview-lightbox-panes.comparing { overflow: auto; cursor: default; }
+.preview-lightbox-panes.comparing.zoomed { cursor: grab; }
+.preview-lightbox-panes.comparing.zoomed.panning { cursor: grabbing; touch-action: none; }
 :is(.preview-lightbox-side-nav, .m-sample-sidebar-side-nav) {
   position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center; min-width: 0; padding: 0; overflow: hidden;
   border: 0; background: transparent; cursor: pointer; touch-action: none;

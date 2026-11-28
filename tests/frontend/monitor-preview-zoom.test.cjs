@@ -270,7 +270,7 @@ test('same-size image relayout does not rewrite scroll positions and interrupt s
   assert.equal(writes, 0, 'background decoded images preserve the current native scroll animation');
 });
 
-test('comparison canvas rejects pan at fit and while zoomed in both layouts', () => {
+test('comparison canvas supports synchronized zoom and pan across compared panes in both layouts', () => {
   for (const vertical of [false, true]) {
     const {value, viewport, bounds} = fixture({vertical, compare: true});
     const captionWidth = vertical ? 160 : 0, captionHeight = vertical ? 0 : 32;
@@ -278,15 +278,23 @@ test('comparison canvas rejects pan at fit and while zoomed in both layouts', ()
     value._syncPreviewGroupViewport();
     const event = {currentTarget: viewport, target: {closest: () => null}, button: 0, pointerId: 7,
       clientX: 500, clientY: 300, preventDefault() {}};
-    for (const scale of [1, 2]) {
-      value.setPreviewViewScale(scale);
-      assert.equal(value.previewViewScale, 1, 'comparison has no manual zoom');
-      const before = bounds();
-      value.startPreviewPan(event);
-      value.movePreviewPan({...event, clientX: 10000, clientY: 10000});
-      assert.equal(value.previewViewPanning, false);
-      assert.deepEqual(bounds(), before);
-    }
+    // At fit without overflow, canvas stays stationary.
+    const atFit = bounds();
+    value.startPreviewPan(event);
+    assert.equal(value.previewViewPanning, false);
+    assert.deepEqual(bounds(), atFit);
+
+    // Zooming in comparison mode scales the group and allows drag panning.
+    value.setPreviewViewScale(2);
+    assert.equal(value.previewViewScale, 2);
+    assert.equal(value.previewViewAtFit(), false);
+    const zoomedBefore = bounds();
+    value.startPreviewPan(event);
+    assert.equal(value.previewViewPanning, true);
+    value.movePreviewPan({...event, clientX: 400, clientY: 220});
+    value.stopPreviewPan(event);
+    assert.notDeepEqual(bounds(), zoomedBefore);
+    assert.equal(value.previewViewPanning, false);
   }
 });
 
@@ -302,21 +310,40 @@ test('reciprocal zoom returns exactly to fit without a misleading 100 percent st
   assert.deepEqual(view, {scale: 1, x: 0, y: 0});
 });
 
-test('comparisons retain scrolling but reject wheel and keyboard zoom', () => {
-  const {value, viewport} = fixture({width: 400, height: 1800, fit: 1 / 3, vertical: true, compare: true});
+test('comparisons support wheel zoom and keyboard shortcuts (+, -, 0, 1)', () => {
+  const {value, viewport} = fixture({width: 800, height: 500, fit: 1, vertical: false, compare: true});
   let prevented = 0;
   const event = {currentTarget: viewport, target: {closest: () => null}, clientX: 500, clientY: 300,
     deltaY: -100, preventDefault() {prevented++;}, stopPropagation() {}};
   value.zoomPreviewView(event);
-  assert.equal(prevented, 0); assert.equal(value.previewViewScale, 1);
-  value.zoomPreviewView({...event, ctrlKey: true});
-  assert.equal(prevented, 1); assert.equal(value.previewViewScale, 1);
-  value.resetPreviewView = () => assert.fail('comparison shortcuts must not resize images');
-  for (const key of ['+', '-', '=', '0']) value.previewLightboxKeydown({...event, key});
-  assert.equal(value.previewViewScale, 1);
+  assert.equal(prevented, 1);
+  assert(value.previewViewScale > 1, 'wheel zoom increases scale in comparison mode');
+
+  const afterWheel = value.previewViewScale;
+  value.previewLightboxKeydown({...event, key: '+'});
+  assert(value.previewViewScale > afterWheel);
+  value.previewLightboxKeydown({...event, key: '-'});
+  assert(Math.abs(value.previewViewScale - afterWheel) < 0.001);
+
+  let resetCalls = 0;
+  const origReset = value.resetPreviewView.bind(value);
+  value.resetPreviewView = smooth => { resetCalls++; return origReset(smooth); };
+  value.previewLightboxKeydown({...event, key: '0'});
+  assert.equal(resetCalls, 1);
+
+  // '1' zooms to 100% natural image pixels when naturalWidth > paneWidth.
+  const prevDoc = global.document;
+  const fakeImg = {naturalWidth: 1600, clientWidth: 400, closest: () => ({style: {getPropertyValue: () => '400px'}})};
+  global.document = {getElementById: id => id === 'previewLightboxImg' ? fakeImg : prevDoc.getElementById(id)};
+  try {
+    value.previewLightboxKeydown({...event, key: '1'});
+    assert.equal(value.previewViewScale, 4);
+  } finally {
+    global.document = prevDoc;
+  }
+
   value.previewSideNavWheel({...event, deltaX: 500, deltaY: 10, metaKey: true});
-  assert.equal(prevented, 2, 'side navigation cannot leak modified diagonal wheel into browser zoom');
-  assert.equal(value.previewViewScale, 1);
+  assert.equal(value.previewViewScale, 4);
 });
 
 test('wheel scrolling over a comparison overlay cancels captured reorder before moving the viewport', () => {
