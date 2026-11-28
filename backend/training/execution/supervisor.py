@@ -19,7 +19,7 @@ from typing import Any, Callable, Optional
 
 from backend.log import log
 from backend.tasks import Task
-from backend.constants import REPO_ROOT
+from backend.constants import CACHE_DIR, REPO_ROOT
 from backend.monitor.snapshot import save_config_snapshot
 from backend.training.core_registry import engine_pythonpaths, get_engine
 
@@ -115,10 +115,12 @@ def _build_train_env(
     )
     env["ACCELERATE_DISABLE_RICH"] = "1"
 
-    # 训练输出目录
+    # 训练输出目录（锁文件放在本地 CACHE_DIR/locks，避免 FUSE/网盘不支持 flock）
+    locks_dir = CACHE_DIR / "locks"
+    locks_dir.mkdir(parents=True, exist_ok=True)
     env["ANIMA_OUTPUT_DIR"] = artifact_dir
     env["ANIMA_RUN_DIR"] = run_dir or artifact_dir
-    env["ANIMA_TRAIN_LOG_LOCK"] = str((Path(run_dir or artifact_dir) / ".train-log.lock").resolve())
+    env["ANIMA_TRAIN_LOG_LOCK"] = str((locks_dir / f"{task_id}.lock").resolve())
     env["ANIMA_TASK_ID"] = task_id
     env["ANIMA_SAMPLE_METADATA"] = "1"
     env["ANIMA_SAMPLE_SESSION"] = str(time.time_ns())
@@ -395,6 +397,12 @@ def run_train(
         finally:
             if task.control:
                 task.control.close()
+            lock_file = task.environ.get("ANIMA_TRAIN_LOG_LOCK")
+            if lock_file:
+                try:
+                    Path(lock_file).unlink(missing_ok=True)
+                except OSError:
+                    pass
             # The worker owns the slot through results, callbacks, and log settlement.
             task.complete_work(failed=validation_failed)
 

@@ -1,14 +1,13 @@
 """Durable, atomic manifests and confined output paths."""
 import json
 import os
-import uuid
 import copy
 import threading
 from collections import OrderedDict
 from pathlib import Path
 
 from backend.constants import TRAIN_DIR
-from backend.utils.file_io import atomic_replace, open_read, read_text
+from backend.utils.file_io import atomic_write_bytes, atomic_write_json, open_read, read_text
 
 OUTPUT_ROOT = TRAIN_DIR / "regularization"
 _manifest_cache = OrderedDict()
@@ -16,20 +15,11 @@ _cache_lock = threading.Lock()
 
 
 def atomic_write(path: Path, data: bytes):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("xb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        atomic_replace(temporary, path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    atomic_write_bytes(path, data)
 
 
 def save_manifest(root: Path, manifest: dict):
-    atomic_write(root / "generation.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
+    atomic_write_json(root / "generation.json", manifest, indent=2)
     save_progress(root, manifest_summary(manifest))
 
 
@@ -64,7 +54,7 @@ def manifest_summary(manifest):
 
 
 def save_progress(root, progress):
-    atomic_write(root / "progress.json", json.dumps(progress, ensure_ascii=False).encode("utf-8"))
+    atomic_write_json(root / "progress.json", progress, indent=None)
 
 
 def read_progress(root):

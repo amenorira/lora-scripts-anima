@@ -15,6 +15,7 @@ from typing import Any, Iterable
 from backend.constants import OUTPUT_DIR
 from backend.monitor.run_registry import resolve_internal_run_dir, resolve_user_path
 from backend.training.fields.field_registry import get_all_fields, field_applies_to_profile
+from backend.utils.file_io import is_fuse_or_network_fs
 
 
 _REGISTRY_FIELDS = get_all_fields()
@@ -35,6 +36,10 @@ _tb_epoch_cache: dict[str, tuple] = {}
 # Live readers retain file cursors and new points, not the complete scalar history.
 _tb_live_cache: dict[str, tuple] = {}
 _tb_live_lock = threading.Lock()
+# 缓存每个 log_dir 已发现的最新 tfevents 路径与父目录 mtime，避免每秒 rglob 遍历（尤其在 FUSE 网盘上）
+_tb_event_path_cache: dict[str, tuple[float, Path, int]] = {}
+_TB_EVENT_RESCAN_LOCAL = 10.0
+_TB_EVENT_RESCAN_FUSE = 30.0
 
 # 监控面板采集的 TensorBoard scalar 标签（全量与增量读取共用）
 _LOSS_TAGS = (
@@ -64,6 +69,55 @@ def primary_learning_rate_tag(tags: Iterable[str]) -> str | None:
     return None
 
 
+def _discover_latest_event_file(log_dir: Path) -> tuple[Path, Any] | None:
+    """定位 log_dir 下最新的 TensorBoard event 文件，并缓存路径以避免高频 rglob。"""
+    log_dir_str = str(log_dir)
+    now = time.monotonic()
+    rescan_interval = _TB_EVENT_RESCAN_FUSE if is_fuse_or_network_fs(log_dir) else _TB_EVENT_RESCAN_LOCAL
+
+    with _tb_cache_lock:
+        cached = _tb_event_path_cache.get(log_dir_str)
+    if cached is not None:
+        discovered_at, cached_path, cached_parent_mtime = cached
+        if now - discovered_at < rescan_interval:
+            try:
+                parent_mtime = cached_path.parent.stat().st_mtime_ns
+                if parent_mtime == cached_parent_mtime:
+                    return cached_path, cached_path.stat()
+            except OSError:
+                pass
+
+    event_files = list(log_dir.rglob("events.out.tfevents.*"))
+    if not event_files:
+        with _tb_cache_lock:
+            _tb_event_path_cache.pop(log_dir_str, None)
+        return None
+
+    ef_with_stat = []
+    for p in event_files:
+        try:
+            ef_with_stat.append((p, p.stat()))
+        except OSError:
+            continue
+    if not ef_with_stat:
+        with _tb_cache_lock:
+            _tb_event_path_cache.pop(log_dir_str, None)
+        return None
+
+    ef_with_stat.sort(key=lambda x: x[1].st_mtime_ns, reverse=True)
+    latest_ef_path, latest_stat = ef_with_stat[0]
+    try:
+        parent_mtime = latest_ef_path.parent.stat().st_mtime_ns
+    except OSError:
+        parent_mtime = -1
+    with _tb_cache_lock:
+        _tb_event_path_cache[log_dir_str] = (now, latest_ef_path, parent_mtime)
+        if len(_tb_event_path_cache) > 64:
+            oldest = min(_tb_event_path_cache, key=lambda k: _tb_event_path_cache[k][0])
+            del _tb_event_path_cache[oldest]
+    return latest_ef_path, latest_stat
+
+
 def _resolve_run_dir_path(run_dir: str) -> Path:
     return resolve_internal_run_dir(run_dir) or resolve_user_path(run_dir)
 
@@ -77,16 +131,14 @@ def _get_cached_accumulator(log_dir: Path, *, incremental: bool = False, epoch_o
 
     cache = _tb_live_cache if incremental else _tb_epoch_cache if epoch_only else _tb_cache
     log_dir_str = str(log_dir)
-    event_files = list(log_dir.rglob("events.out.tfevents.*"))
-    if not event_files:
+    discovered = _discover_latest_event_file(log_dir)
+    if discovered is None:
         with _tb_cache_lock:
             cache.pop(log_dir_str, None)
         return None
 
     # 使用最新 event file 的所在目录（EventAccumulator 不递归搜索子目录）
-    ef_with_stat = [(p, p.stat()) for p in event_files]
-    ef_with_stat.sort(key=lambda x: x[1].st_mtime_ns, reverse=True)
-    latest_ef_path, latest_stat = ef_with_stat[0]
+    latest_ef_path, latest_stat = discovered
     stamp = (str(latest_ef_path), latest_stat.st_mtime_ns, latest_stat.st_size)
     event_dir = str(latest_ef_path.parent)  # 实际包含 event file 的目录
     now = time.time()

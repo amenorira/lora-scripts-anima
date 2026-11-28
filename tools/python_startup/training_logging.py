@@ -11,44 +11,92 @@ import threading
 import time
 
 
+_FLOCK_UNSUPPORTED_ERRNOS = frozenset(
+    code
+    for code in (
+        getattr(errno, "ENOLCK", None),
+        getattr(errno, "ENOSYS", None),
+        getattr(errno, "EOPNOTSUPP", None),
+        getattr(errno, "ENOTSUP", None),
+        getattr(errno, "EINVAL", None),
+    )
+    if code is not None
+)
+
+
 class _OutputLock:
     def __init__(self, path):
         self.path = path
         self.local = threading.RLock()
         self.pid = None
         self.fd = None
+        self._flock_disabled = False
+
+    def _close_fd(self) -> None:
+        if self.fd is not None:
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
 
     @contextmanager
     def hold(self):
         with self.local:
-            # Open separately in each process, including forked workers.
-            if self.pid != os.getpid():
-                if self.fd is not None:
-                    os.close(self.fd)
-                self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
-                self.pid = os.getpid()
-            if os.name == "nt":
-                import msvcrt
-                os.lseek(self.fd, 0, os.SEEK_SET)
-                while True:
+            locked_fd = None
+            if not self._flock_disabled:
+                # Open separately in each process, including forked workers.
+                if self.pid != os.getpid() or self.fd is None:
+                    self._close_fd()
                     try:
-                        msvcrt.locking(self.fd, msvcrt.LK_NBLCK, 1)
-                        break
+                        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+                        self.pid = os.getpid()
                     except OSError as exc:
-                        if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                        if exc.errno in _FLOCK_UNSUPPORTED_ERRNOS:
+                            self._flock_disabled = True
+                            self.pid = os.getpid()
+                        else:
                             raise
-                        time.sleep(0.01)
-            else:
-                import fcntl
-                fcntl.flock(self.fd, fcntl.LOCK_EX)
+                if not self._flock_disabled and self.fd is not None:
+                    if os.name == "nt":
+                        import msvcrt
+                        os.lseek(self.fd, 0, os.SEEK_SET)
+                        while True:
+                            try:
+                                msvcrt.locking(self.fd, msvcrt.LK_NBLCK, 1)
+                                locked_fd = self.fd
+                                break
+                            except OSError as exc:
+                                if exc.errno not in (errno.EACCES, errno.EDEADLK):
+                                    raise
+                                time.sleep(0.01)
+                    else:
+                        import fcntl
+                        try:
+                            fcntl.flock(self.fd, fcntl.LOCK_EX)
+                            locked_fd = self.fd
+                        except OSError as exc:
+                            if exc.errno in _FLOCK_UNSUPPORTED_ERRNOS:
+                                # FUSE/network filesystems may not implement flock;
+                                # fall back to in-process threading.RLock.
+                                self._flock_disabled = True
+                                self._close_fd()
+                            else:
+                                raise
             try:
                 yield
             finally:
-                if os.name == "nt":
-                    os.lseek(self.fd, 0, os.SEEK_SET)
-                    msvcrt.locking(self.fd, msvcrt.LK_UNLCK, 1)
-                else:
-                    fcntl.flock(self.fd, fcntl.LOCK_UN)
+                if locked_fd is not None:
+                    if os.name == "nt":
+                        import msvcrt
+                        os.lseek(locked_fd, 0, os.SEEK_SET)
+                        msvcrt.locking(locked_fd, msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+                        try:
+                            fcntl.flock(locked_fd, fcntl.LOCK_UN)
+                        except OSError:
+                            pass
 
 
 def install(path: str) -> None:

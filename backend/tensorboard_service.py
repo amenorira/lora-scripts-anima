@@ -38,12 +38,12 @@ class TensorBoardService:
         try:
             log_path = Path(log_path or LOGS_DIR / "tensorboard.log")
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            # tempfile's default directory can fall back to cwd when the system
-            # temp directories are unwritable. Always keep our handshake beside
-            # the log, and clean up only paths allocated by this instance.
-            # The child publishes atomically, so the path must not exist yet.
+            # Keep the atomic endpoint handshake on local CACHE_DIR rather than
+            # a potentially FUSE/network LOGS_DIR, cleaning up only our own path.
+            endpoint_dir = CACHE_DIR / "tensorboard"
+            endpoint_dir.mkdir(parents=True, exist_ok=True)
             fd, endpoint_name = tempfile.mkstemp(
-                prefix=".tensorboard-endpoint-", suffix=".txt", dir=log_path.parent
+                prefix=".tensorboard-endpoint-", suffix=".txt", dir=endpoint_dir
             )
             os.close(fd)
             os.unlink(endpoint_name)

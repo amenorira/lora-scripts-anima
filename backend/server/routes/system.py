@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 import hashlib
 import json
+import os
 import re
 import threading
 import time
@@ -167,19 +168,68 @@ def invalidate_files_cache() -> None:
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif"}
 
 
-def _dataset_folder_stats(folder: Path) -> dict:
-    """统计数据集文件夹：递归数图片，以及其中有同名 .txt 打标的数量。"""
+_DATASET_STATS_MAX_ENTRIES = 5000
+_DATASET_STATS_TIMEOUT_SEC = 1.5
+
+
+def _dataset_folder_stats(
+    folder: Path,
+    *,
+    max_entries: int = _DATASET_STATS_MAX_ENTRIES,
+    timeout_sec: float = _DATASET_STATS_TIMEOUT_SEC,
+) -> dict:
+    """统计数据集文件夹：递归数图片及同名 .txt 打标数（带条目数与时间上限，避免大 FUSE 目录卡死）。"""
     images = 0
     captioned = 0
-    try:
-        for item in folder.rglob("*"):
-            if item.is_file() and item.suffix.lower() in _IMAGE_EXTS:
-                images += 1
-                if item.with_suffix(".txt").is_file():
-                    captioned += 1
-    except OSError:
-        pass
-    return {"images": images, "captioned": captioned}
+    visited = 0
+    truncated = False
+    deadline = time.monotonic() + timeout_sec
+    pending: list[Path] = [folder]
+
+    while pending:
+        if visited >= max_entries or time.monotonic() >= deadline:
+            truncated = True
+            break
+        current = pending.pop()
+        file_names: list[str] = []
+        txt_stems: set[str] = set()
+        subdirs: list[Path] = []
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    if entry.name.startswith((".", "__")):
+                        continue
+                    visited += 1
+                    if visited > max_entries:
+                        truncated = True
+                        break
+                    try:
+                        if entry.is_file():
+                            name = entry.name
+                            stem, ext = os.path.splitext(name)
+                            ext_low = ext.lower()
+                            if ext_low == ".txt":
+                                txt_stems.add(os.path.normcase(stem))
+                            elif ext_low in _IMAGE_EXTS:
+                                file_names.append(os.path.normcase(stem))
+                        elif not entry.is_symlink() and entry.is_dir():
+                            subdirs.append(Path(entry.path))
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+        for stem in file_names:
+            images += 1
+            if stem in txt_stems:
+                captioned += 1
+        if truncated:
+            break
+        pending.extend(reversed(subdirs))
+
+    result = {"images": images, "captioned": captioned}
+    if truncated:
+        result["truncated"] = True
+    return result
 
 
 @router.get("/get_files")

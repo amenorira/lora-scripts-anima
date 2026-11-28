@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any
 
+from backend.constants import OUTPUT_DIR
 from backend.core.realtime import realtime_hub, realtime_tasks, task_topic
+from backend.utils.file_io import is_fuse_or_network_fs
 from backend.monitor.hardware import gpu_info, system_info
 from backend.monitor.training import parse_log_progress, primary_learning_rate_tag, read_tensorboard_incremental
 from backend.monitor.artifacts import newest_previews, read_output_summary
@@ -34,6 +37,24 @@ _PROGRESS_FIELDS = (
 _MAX_REALTIME_LOG_CHARS = 48 * 1024
 _MAX_REALTIME_LOG_LINES = 1000
 _MAX_REALTIME_METRIC_POINTS = 256
+_DEFAULT_SAMPLE_INTERVAL = 1.0
+_FUSE_SAMPLE_INTERVAL = 2.0
+
+
+def resolve_monitor_interval(run_dir: Path | None = None, *, default: float = _DEFAULT_SAMPLE_INTERVAL) -> float:
+    """Resolve polling interval from ANIMA_MONITOR_INTERVAL or FUSE auto-tuning."""
+    raw = os.environ.get("ANIMA_MONITOR_INTERVAL", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+            if value > 0:
+                return max(0.25, min(30.0, value))
+        except ValueError:
+            pass
+    probe = run_dir if run_dir is not None else OUTPUT_DIR
+    if is_fuse_or_network_fs(probe):
+        return max(default, _FUSE_SAMPLE_INTERVAL)
+    return default
 
 
 def _format_learning_rate(value: Any) -> str:
@@ -100,7 +121,8 @@ class TaskMonitor:
     def __init__(self):
         self._running = False
         self._tasks: list[asyncio.Task] = []
-        self._sample_interval = 1.0  # 真实采样间隔（秒）
+        self._sample_interval = resolve_monitor_interval()  # 真实采样间隔（秒）
+        self._active_run_dir: Path | None = None
         self._last_status: dict[str, str] = {}  # task_id -> last_status
         self._last_log_cursor: dict[str, dict] = {}  # 与分页共用规范化行号，包含可被覆盖的末行。
         self._last_progress: dict[str, dict[str, Any]] = {}  # task_id -> 最近一次有效字段
@@ -202,7 +224,8 @@ class TaskMonitor:
         while self._running:
             try:
                 await sample()
-                await asyncio.sleep(self._sample_interval)
+                interval = resolve_monitor_interval(self._active_run_dir, default=self._sample_interval)
+                await asyncio.sleep(interval)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -267,6 +290,8 @@ class TaskMonitor:
             record = await asyncio.to_thread(find_run_record_by_task_id, task_id)
             run_dir = str(record["run_path"]) if record else None
             run_dir_path = Path(run_dir) if run_dir else None
+            if run_dir_path is not None:
+                self._active_run_dir = run_dir_path
             if run_dir_path and task_id not in self._output_names:
                 config = await asyncio.to_thread(read_run_config, run_dir_path)
                 if config:
@@ -476,6 +501,8 @@ class TaskMonitor:
         self._last_artifact_check.pop(task_id, None)
         self._last_artifact_signature.pop(task_id, None)
         self._pending_artifact_signature.pop(task_id, None)
+        if not self._last_progress:
+            self._active_run_dir = None
         logger.debug(f"清理任务状态: {task_id}")
 
 

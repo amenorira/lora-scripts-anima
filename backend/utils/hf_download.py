@@ -19,11 +19,14 @@
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import re
+import shutil
 import threading
 import time
+import uuid
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -157,6 +160,37 @@ def _range_response(response, start: int, end: int | None = None) -> int:
     return int(match[3])
 
 
+def _staging_prefix(dest: Path) -> Path:
+    """在本地 CACHE_DIR/downloads 为目标文件分配确定性暂存前缀，避免在 FUSE/网盘上写分块。"""
+    from backend.constants import CACHE_DIR
+
+    stage_dir = CACHE_DIR / "downloads"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    key = hashlib.sha256(str(dest.resolve()).encode("utf-8", errors="ignore")).hexdigest()[:16]
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", dest.name)[:64] or "file"
+    return stage_dir / f"{safe_name}.{key}"
+
+
+def _promote_file(source: Path, dest: Path) -> None:
+    """原子发布已校验文件；跨设备（EXDEV）时经目标目录临时文件复制再替换。"""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(source, dest)
+        return
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+    staged_dest = dest.with_name(f".{dest.name}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        with open(source, "rb") as src, open(staged_dest, "wb") as dst:
+            shutil.copyfileobj(src, dst, length=_COPY_BUF)
+        os.replace(staged_dest, dest)
+    except BaseException:
+        staged_dest.unlink(missing_ok=True)
+        raise
+    source.unlink(missing_ok=True)
+
+
 def _verify_and_promote(
     partial: Path,
     dest: Path,
@@ -176,7 +210,7 @@ def _verify_and_promote(
             digest = hashlib.file_digest(stream, "sha256").hexdigest()
         if digest.lower() != expected_sha256.lower():
             raise IntegrityError(f"{filename}: sha256 mismatch / 校验值不匹配")
-    os.replace(partial, dest)
+    _promote_file(partial, dest)
     return got
 
 
@@ -450,7 +484,8 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
     total = _head_total(url, headers)
     if expected_size is not None and total > 0 and total != expected_size:
         raise IntegrityError(f"{filename}: size mismatch / 大小不匹配 {total} != {expected_size}")
-    partial = dest.with_suffix(dest.suffix + ".partial")
+    stage_prefix = _staging_prefix(dest)
+    partial = Path(f"{stage_prefix}.partial")
 
     if total < _PART_MIN:
         return _download_single_stream(
@@ -465,7 +500,7 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
     n_parts = 1 if total < _PART_MIN else min(_MAX_PARTS, max(1, total // _PART_MIN))
     ranges = _split_ranges(total, n_parts)
     part_sizes = [re_ - rs + 1 for rs, re_ in ranges]
-    part_files = [dest.with_suffix(dest.suffix + f".part{i}") for i in range(n_parts)]
+    part_files = [Path(f"{stage_prefix}.part{i}") for i in range(n_parts)]
     part_bytes: list[int] = [0] * n_parts
 
     for i, pf in enumerate(part_files):
@@ -587,15 +622,18 @@ def _download_one_endpoint(url: str, dest: Path, progress: dict, lock: threading
 
 
 def cleanup_temp(dest: Path) -> None:
-    """删除某文件的所有临时分块 / .partial（失败收尾，避免孤儿文件）。"""
+    """删除某文件的所有临时分块 / .partial（含本地暂存与旧版同目录残留）。"""
     try:
-        partial = dest.with_suffix(dest.suffix + ".partial")
-        if partial.exists():
-            os.unlink(partial)
-        for i in range(_MAX_PARTS):
-            pf = dest.with_suffix(dest.suffix + f".part{i}")
-            if pf.exists():
-                os.unlink(pf)
+        stage_prefix = _staging_prefix(dest)
+        candidates = [
+            Path(f"{stage_prefix}.partial"),
+            *(Path(f"{stage_prefix}.part{i}") for i in range(_MAX_PARTS)),
+            dest.with_suffix(dest.suffix + ".partial"),
+            *(dest.with_suffix(dest.suffix + f".part{i}") for i in range(_MAX_PARTS)),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                os.unlink(candidate)
     except Exception:
         pass
 
