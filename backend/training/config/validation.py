@@ -39,6 +39,20 @@ _SCHEDULER_PARAMETER_MODES = {
     "decay_type": {"warmup_stable_decay"},
     "step_rules": {"piecewise_constant"},
 }
+_INVALID_OUTPUT_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def validate_output_name(value: Any) -> str | None:
+    """Reject path separators, control characters, and '.' / '..' in output_name."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text in {".", ".."} or _INVALID_OUTPUT_NAME_RE.search(str(value)):
+        return (
+            "output_name: filenames cannot contain < > : \" / \\ | ? * or control characters, "
+            "and cannot be . or .. / 文件名不能包含 < > : \" / \\ | ? * 或控制字符，也不能为 . 或 .."
+        )
+    return None
 
 
 def _select_values(field: dict[str, Any], profile_id: str) -> set[Any]:
@@ -392,6 +406,10 @@ def validate_training_config(config: dict[str, Any], gpu_ids: Any = None) -> lis
         except ValueError as exc:
             errors.append(str(exc))
     from backend.training.config.option_contracts import normalize_sd_options, validate_sd_option_dependencies
+
+    output_name_error = validate_output_name(config.get("output_name"))
+    if output_name_error:
+        errors.append(output_name_error)
 
     errors.extend(validate_sd_option_dependencies(config))
     normalize_sd_options(config)

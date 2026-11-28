@@ -1575,6 +1575,7 @@
 		"cache_latentsLocked": "Latent caching is unavailable while random cropping is enabled.",
 		"random_cropCacheDisabled": "Random cropping enabled; memory and disk latent caching disabled.",
 		"output_name": "Model save name",
+		"outputNameCharacterError": "Filenames cannot contain < > : \" / \\ | ? * or control characters, and cannot be . or ..",
 		"output_dir": "Model output directory",
 		"save_model_as": "Model save format",
 		"save_precision": "Model save precision",

@@ -11,6 +11,41 @@ function translator(locale = 'en-US') {
   };
 }
 
+test('training form blocks invalid filename characters and dot names while rendering field-error', async () => {
+  const requests = [], focused = [];
+  const { window } = loadFrontend(['shared/utils', ...TRAINING_CORE_SCRIPTS, 'training/toml'], {
+    window: { TRAIN_GROUP_MAP: {} }, fetch: url => requests.push(url),
+  });
+  const app = composeMixins(window.utilsMixin, window.trainingCoreMixin, window.trainingTomlMixin, {
+    form: { model_train_type: 'sdxl-lora', output_name: 'my_lora' },
+    formErrors: {}, formDefaults: { output_name: 'my_lora' },
+    _allSections: () => [], t: translator(),
+    _enforceCheckpointingUiConstraints() {}, _enforceMossTextEncoderFreeze() {}, scheduleStepEstimate() {},
+    $nextTick: fn => fn(), focusTrainingField: key => focused.push(key), toast() {},
+  });
+  const rendered = app.renderField({ key: 'output_name', type: 'text', default: 'my_lora' }, 'sdxl-lora');
+  assert.match(rendered, /<template x-if="formErrors && formErrors\.output_name"><div class="field-error">/);
+  assert.doesNotMatch(rendered, /field-hint-warn/);
+
+  const invalidValues = [...'<>:"/\\|?*', '\x00', '\x1f'].map(ch => 'portraits' + ch + 'v2');
+  invalidValues.push('.', '..', ' .. ');
+  for (const invalid of invalidValues) {
+    app.form.output_name = invalid;
+    app._refreshTrainingOptionErrors();
+    assert.equal(app.formErrors.output_name, app.t('field.outputNameCharacterError'));
+    await app.startTraining();
+    assert.equal(app.formErrors.output_name, app.t('field.outputNameCharacterError'));
+  }
+  assert.deepEqual(focused, invalidValues.map(() => 'output_name'));
+  assert.deepEqual(requests, []);
+  for (const name of ['portrait_v2', 'my.lora', '人像 portraits_v2.1']) {
+    app.form.output_name = name;
+    app._refreshTrainingOptionErrors();
+    assert.ok(!app.formErrors.output_name, name);
+    assert.equal(app.validateForm(), true, name);
+  }
+});
+
 test('resume field uses state-dir pick_type and renders run/epoch/step/size details', async () => {
   const urls = [];
   const { window } = loadFrontend(['shared/utils', ...TRAINING_CORE_SCRIPTS], {

@@ -24,6 +24,8 @@ from backend.server.routes import environment as env_routes
 from backend.server.routes import system as system_routes
 from backend.tagger import tagger_download
 from backend.training import checkpoint_state
+from backend.training.config.musubi_krea2 import KREA2_FIELDS, validate_krea2_config
+from backend.training.config.validation import validate_training_config
 from backend.training.execution import supervisor
 from tools import moss_acceleration as accel
 
@@ -154,6 +156,50 @@ class SystemCloudRoutesTests(unittest.TestCase):
             r_out = self.client.post("/api/files/mkdir", json={"parent": "./output", "name": "custom_out"})
             self.assertEqual(r_out.status_code, 200)
             self.assertTrue((self.output / "custom_out").is_dir())
+
+    def test_output_name_validation_rejects_invalid_characters_and_dot_names(self):
+        base_sd = {
+            "model_train_type": "anima-lora",
+            "pretrained_model_name_or_path": "./models/base.safetensors",
+            "vae": "./models/vae.safetensors",
+            "qwen3": "./models/qwen.safetensors",
+            "train_data_dir": "./train",
+            "output_dir": "./output",
+            "resolution": "1024,1024",
+            "network_module": "networks.lora_anima",
+            "network_dim": 16,
+            "network_alpha": 16,
+            "optimizer_type": "AdamW8bit",
+            "learning_rate": "1e-4",
+            "output_name": "valid_lora",
+        }
+        base_krea = {
+            **{f["key"]: f["default"] for f in KREA2_FIELDS if "default" in f},
+            "model_train_type": "krea2-lora",
+            "dit": "./models/dit.safetensors",
+            "vae": "./models/vae.safetensors",
+            "text_encoder": "./models/te.safetensors",
+            "train_data_dir": "./train",
+            "dataset_cache_dir": "./train/.krea2-cache",
+            "caption_extension": ".txt",
+            "output_dir": "./output",
+            "resolution": "1024,1024",
+            "network_module": "networks.lora_krea2",
+            "network_dim": 16,
+            "network_alpha": 16,
+            "optimizer_type": "AdamW8bit",
+            "learning_rate": 1e-4,
+            "krea_training_duration_mode": "epochs",
+            "max_train_epochs": 1,
+            "output_name": "valid_krea",
+        }
+        self.assertEqual(validate_training_config(dict(base_sd)), [])
+        self.assertEqual(validate_krea2_config(dict(base_krea)), [])
+        for bad_name in ("bad/name", "bad:name", "bad*name", ".", "..", "a\nb"):
+            sd_err = validate_training_config({**base_sd, "output_name": bad_name})
+            krea_err = validate_krea2_config({**base_krea, "output_name": bad_name})
+            self.assertTrue(any(e.startswith("output_name:") for e in sd_err), bad_name)
+            self.assertTrue(any(e.startswith("output_name:") for e in krea_err), bad_name)
 
     def test_external_data_dir_does_not_bypass_writable_root_confinement(self):
         ext_data = self.base / "ext_data"

@@ -1575,6 +1575,7 @@
 		"cache_latentsLocked": "随机裁剪已开启，无法使用图像编码缓存。",
 		"random_cropCacheDisabled": "已开启随机裁剪，并关闭内存和磁盘图像缓存。",
 		"output_name": "模型保存名称",
+		"outputNameCharacterError": "文件名不能包含 < > : \" / \\ | ? * 或控制字符，也不能为 . 或 ..。",
 		"output_dir": "模型保存文件夹",
 		"save_model_as": "模型保存格式",
 		"save_precision": "模型保存精度",

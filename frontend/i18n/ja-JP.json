@@ -1575,6 +1575,7 @@
 		"cache_latentsLocked": "ランダムトリミングが有効な間は、latent をキャッシュできません。",
 		"random_cropCacheDisabled": "ランダムトリミングを有効にし、メモリ・ディスクへの latent のキャッシュを無効にしました。",
 		"output_name": "モデルの保存名",
+		"outputNameCharacterError": "ファイル名には < > : \" / \\ | ? * や制御文字、および . や .. を使えません。",
 		"output_dir": "モデルの出力フォルダ",
 		"save_model_as": "モデルの保存形式",
 		"save_precision": "モデルの保存精度",

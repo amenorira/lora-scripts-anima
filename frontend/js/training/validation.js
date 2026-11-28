@@ -56,9 +56,16 @@ window.trainingValidation = {
     return { boundaries, finalMultiplier };
   },
 
+  _outputNameErrors() {
+    const raw = String(this.form.output_name || '');
+    const trimmed = raw.trim();
+    return (/[<>:"/\\|?*\x00-\x1f]/.test(raw) || trimmed === '.' || trimmed === '..')
+      ? { output_name: this.t('field.outputNameCharacterError') } : {};
+  },
+
   _refreshTrainingOptionErrors() {
     const errors = this.formErrors;
-    const current = { ...this._timestepOptionErrors(), ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
+    const current = { ...this._outputNameErrors(), ...this._timestepOptionErrors(), ...this._checkpointOffloadErrors(), ...this._mossOptionErrors(),
       ...this._kreaOptionErrors(), ...this._muonOptionErrors(), ...this._adamwOptionErrors() };
     // Only clear messages we still own; a server error may have replaced the same field's message.
     Object.entries(this._trainingOptionErrorMessages || {}).forEach(([key, message]) => {
@@ -245,7 +252,7 @@ window.trainingValidation = {
   },
 
   validateForm() {
-    const errors = {};
+    const errors = this._outputNameErrors();
     // Check all required fields
     const currentGroup = window.TRAIN_GROUP_MAP[this.form.model_train_type || 'anima-lora'] || 'all';
     const sections = this._allSections();

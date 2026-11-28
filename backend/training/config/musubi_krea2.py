@@ -516,6 +516,8 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
             errors.append(f"{key}: must be boolean / 必须为布尔值")
     if config.get("krea_attention_backend") == "xformers" and config["krea_split_attn"] == "false":
         errors.append("krea_split_attn: xFormers requires split attention for Krea 2 / Krea 2 使用 xFormers 时需要拆分注意力")
+    from backend.training.config.validation import validate_output_name
+
     for key in (
         "dit",
         "vae",
@@ -528,6 +530,10 @@ def validate_krea2_config(config: dict[str, Any]) -> list[str]:
     ):
         if _is_empty(config.get(key)):
             errors.append(f"{key}: required / 必填")
+
+    output_name_error = validate_output_name(config.get("output_name"))
+    if output_name_error:
+        errors.append(output_name_error)
 
     errors.extend(validate_krea2_network(config))
 
