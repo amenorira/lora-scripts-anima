@@ -6,14 +6,24 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import threading
 import time
 from pathlib import Path
 
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 
 from backend import launch_utils
-from backend.constants import OUTPUT_DIR, REPO_ROOT, SD_MODELS_DIR, SD_SCRIPTS_DIR, TRAIN_DIR, VENDOR_ROOT
+from backend.constants import (
+    CONFIG_DIR,
+    OUTPUT_DIR,
+    REPO_ROOT,
+    SD_MODELS_DIR,
+    SD_SCRIPTS_DIR,
+    TRAIN_DIR,
+    VENDOR_ROOT,
+)
 from backend.regularization.storage import OUTPUT_ROOT as REGULARIZATION_OUTPUT_ROOT
 from backend.server.models import APIResponse, APIResponseFail, APIResponseSuccess
 from backend.tasks import tm
@@ -166,6 +176,203 @@ def invalidate_files_cache() -> None:
 
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif"}
+_TEXT_FILE_EXTS = {".txt", ".md", ".json", ".toml", ".yaml", ".yml"}
+_STATE_SCAN_SKIP_DIRS = {"sample", "log", "logs"}
+
+
+def _list_state_dirs(output_root: Path) -> list[dict]:
+    """Scan OUTPUT_DIR for valid resumable training state directories."""
+    if not output_root.exists():
+        return []
+    from backend.monitor.artifacts import _dir_summary, _is_training_state_dir, _parse_state_dir
+    from backend.training.checkpoint_state import resumable_state
+
+    try:
+        resolved_root = output_root.resolve()
+    except OSError:
+        return []
+
+    results: list[dict] = []
+    seen: set[Path] = set()
+    pending: list[tuple[Path, int]] = [(output_root, 0)]
+    while pending:
+        current, depth = pending.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    if entry.name.startswith((".", "__")):
+                        continue
+                    try:
+                        if entry.is_symlink() or not entry.is_dir():
+                            continue
+                        dir_path = Path(entry.path)
+                        resolved_dir = dir_path.resolve()
+                        if not resolved_dir.is_relative_to(resolved_root) or resolved_dir in seen:
+                            continue
+                    except OSError:
+                        continue
+
+                    if _is_training_state_dir(dir_path):
+                        seen.add(resolved_dir)
+                        run_dir_hint = dir_path.parent if dir_path.parent != output_root else None
+                        if not resumable_state(dir_path, run_dir_hint):
+                            continue
+                        try:
+                            dir_stat = entry.stat()
+                            total_size, latest_mtime = _dir_summary(dir_path, dir_stat)
+                        except OSError:
+                            continue
+                        parsed = _parse_state_dir(dir_path, dir_path.name)
+                        try:
+                            run_name = (
+                                dir_path.parent.relative_to(output_root).as_posix()
+                                if dir_path.parent != output_root
+                                else ""
+                            )
+                        except ValueError:
+                            run_name = dir_path.parent.name if dir_path.parent != output_root else ""
+                        results.append({
+                            "name": dir_path.name,
+                            "path": _to_picker_path(dir_path),
+                            "size": total_size,
+                            "size_bytes": total_size,
+                            "mtime": latest_mtime,
+                            "run_name": run_name,
+                            "step": parsed.get("ckpt_step"),
+                            "epoch": parsed.get("ckpt_epoch"),
+                        })
+                    elif depth < 3 and entry.name.lower() not in _STATE_SCAN_SKIP_DIRS:
+                        pending.append((dir_path, depth + 1))
+        except OSError:
+            continue
+
+    results.sort(key=lambda item: -float(item.get("mtime") or 0))
+    return results
+
+
+def _list_text_files(roots: tuple[Path, ...], *, max_entries: int = 5000, max_results: int = 500) -> list[dict]:
+    """Scan CONFIG_DIR and TRAIN_DIR for text/prompt/knowledge files."""
+    results: list[dict] = []
+    seen_files: set[Path] = set()
+    visited = 0
+
+    for root in roots:
+        if not root.exists():
+            continue
+        try:
+            resolved_root = root.resolve()
+        except OSError:
+            continue
+        pending: list[Path] = [root]
+        while pending and visited < max_entries and len(results) < max_results:
+            current = pending.pop()
+            subdirs: list[Path] = []
+            try:
+                with os.scandir(current) as entries:
+                    for entry in entries:
+                        if entry.name.startswith((".", "__")):
+                            continue
+                        visited += 1
+                        if visited > max_entries:
+                            break
+                        try:
+                            if entry.is_symlink():
+                                continue
+                            if entry.is_file():
+                                ext = os.path.splitext(entry.name)[1].lower()
+                                if ext not in _TEXT_FILE_EXTS:
+                                    continue
+                                file_path = Path(entry.path)
+                                resolved_file = file_path.resolve()
+                                if not resolved_file.is_relative_to(resolved_root) or resolved_file in seen_files:
+                                    continue
+                                seen_files.add(resolved_file)
+                                st = entry.stat()
+                                results.append({
+                                    "path": _to_picker_path(file_path),
+                                    "name": file_path.name,
+                                    "size": st.st_size,
+                                    "size_bytes": st.st_size,
+                                    "mtime": st.st_mtime,
+                                })
+                                if len(results) >= max_results:
+                                    break
+                            elif entry.is_dir():
+                                sub_path = Path(entry.path)
+                                if sub_path.resolve().is_relative_to(resolved_root):
+                                    subdirs.append(sub_path)
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+            pending.extend(reversed(subdirs))
+
+    results.sort(key=lambda item: -float(item.get("mtime") or 0))
+    return results
+
+
+def _writable_roots(*, include_output: bool) -> tuple[Path, ...]:
+    """Return allowed writable storage roots (TRAIN_DIR/SD_MODELS_DIR/CONFIG_DIR already follow DATA_DIR)."""
+    roots: list[Path] = [TRAIN_DIR, SD_MODELS_DIR, CONFIG_DIR]
+    if include_output:
+        roots.append(OUTPUT_DIR)
+    return tuple(roots)
+
+
+def _resolve_writable_dir(
+    raw_dir: str,
+    *,
+    allowed_roots: tuple[Path, ...],
+    default_dir: Path,
+) -> tuple[Path, Path]:
+    """Resolve a target directory and strictly enforce confinement within allowed_roots."""
+    text = (raw_dir or "").strip() if isinstance(raw_dir, str) else ""
+    if "\x00" in text:
+        raise ValueError("Invalid path / 无效路径")
+    if not text:
+        display_path = default_dir
+    else:
+        candidate = Path(text).expanduser()
+        if candidate.is_absolute():
+            display_path = candidate
+        else:
+            parts = candidate.parts
+            logical_map = {
+                "models": SD_MODELS_DIR,
+                "train": TRAIN_DIR,
+                "output": OUTPUT_DIR,
+                "config": CONFIG_DIR,
+            }
+            if parts and parts[0] in logical_map:
+                display_path = logical_map[parts[0]].joinpath(*parts[1:])
+            else:
+                display_path = REPO_ROOT / candidate
+        display_path = Path(os.path.normpath(str(display_path)))
+
+    resolved = display_path.resolve()
+    allowed_resolved = [root.resolve() for root in allowed_roots]
+    if not any(resolved.is_relative_to(root) for root in allowed_resolved):
+        raise PermissionError("Path is outside allowed writable directories / 路径超出允许的可写目录")
+    return display_path, resolved
+
+
+def _validate_entry_name(raw_name: object) -> str:
+    """Validate a single folder or file basename (no separators, traversal, or control chars)."""
+    if not isinstance(raw_name, str):
+        raise ValueError("Name is required / 名称不能为空")
+    name = raw_name.strip()
+    if not name or name in {".", ".."} or ".." in name:
+        raise ValueError("Invalid name / 名称无效")
+    if any(ch in name for ch in ("/", "\\", ":", "\x00")):
+        raise ValueError("Invalid characters in name / 名称包含非法字符")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
+        raise ValueError("Control characters are not allowed / 名称不能包含控制字符")
+    return name
+
+
+def _is_link_or_junction(path: Path) -> bool:
+    is_junction = getattr(os.path, "isjunction", None)
+    return path.is_symlink() or (callable(is_junction) and bool(is_junction(path)))
 
 
 _DATASET_STATS_MAX_ENTRIES = 5000
@@ -290,6 +497,18 @@ async def get_files(pick_type) -> APIResponse:
 
         return result_list
 
+    if pick_type == "state-dir":
+        dirs = await asyncio.to_thread(_list_state_dirs, OUTPUT_DIR)
+        with _files_cache_lock:
+            _files_cache[pick_type] = (now, dirs)
+        return APIResponseSuccess(data={"files": dirs})
+
+    if pick_type == "text-file":
+        dirs = await asyncio.to_thread(_list_text_files, (CONFIG_DIR, TRAIN_DIR))
+        with _files_cache_lock:
+            _files_cache[pick_type] = (now, dirs)
+        return APIResponseSuccess(data={"files": dirs})
+
     if pick_type not in pick_preset:
         return APIResponseFail(message="Invalid request / 无效请求")
 
@@ -297,6 +516,75 @@ async def get_files(pick_type) -> APIResponse:
     with _files_cache_lock:
         _files_cache[pick_type] = (now, dirs)
     return APIResponseSuccess(data={"files": dirs})
+
+
+@router.post("/files/mkdir")
+async def create_directory(request: Request):
+    """Create a folder inside an allowed writable storage root."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid JSON body / 请求 JSON 格式无效"})
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid request body / 请求体无效"})
+
+    parent_raw = body.get("parent", "")
+    name_raw = body.get("name", "")
+    if parent_raw is not None and not isinstance(parent_raw, str):
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid parent path / 父目录无效"})
+
+    try:
+        name = _validate_entry_name(name_raw)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(exc)})
+
+    allowed_roots = _writable_roots(include_output=True)
+    try:
+        display_parent, parent_resolved = _resolve_writable_dir(
+            parent_raw or "",
+            allowed_roots=allowed_roots,
+            default_dir=TRAIN_DIR,
+        )
+    except PermissionError as exc:
+        return JSONResponse(status_code=403, content={"status": "error", "message": str(exc)})
+    except (ValueError, OSError) as exc:
+        return JSONResponse(status_code=400, content={"status": "error", "message": str(exc)})
+
+    def _create_dir() -> tuple[int, dict]:
+        allowed_resolved = [root.resolve() for root in allowed_roots]
+        if not parent_resolved.exists():
+            if parent_resolved in allowed_resolved:
+                parent_resolved.mkdir(parents=True, exist_ok=True)
+            else:
+                return 400, {"status": "error", "message": "Parent directory does not exist / 父目录不存在"}
+        if not parent_resolved.is_dir():
+            return 400, {"status": "error", "message": "Parent path is not a directory / 父路径不是目录"}
+
+        target = parent_resolved / name
+        target_resolved = target.resolve()
+        if (
+            target_resolved.parent != parent_resolved
+            or not any(target_resolved.is_relative_to(root) for root in allowed_resolved)
+        ):
+            return 403, {"status": "error", "message": "Target path escapes allowed root / 目标路径越界"}
+        if target.exists() or _is_link_or_junction(target):
+            return 409, {"status": "error", "message": "Folder already exists / 目录已存在"}
+
+        target.mkdir(exist_ok=False)
+        invalidate_files_cache()
+        return 200, {
+            "status": "success",
+            "path": _to_picker_path(display_parent / name),
+            "name": name,
+        }
+
+    try:
+        status_code, payload = await asyncio.to_thread(_create_dir)
+    except OSError as exc:
+        return JSONResponse(status_code=500, content={"status": "error", "message": f"Failed to create folder: {exc}"})
+    if status_code != 200:
+        return JSONResponse(status_code=status_code, content=payload)
+    return payload
 
 
 @router.get("/graphic_cards")

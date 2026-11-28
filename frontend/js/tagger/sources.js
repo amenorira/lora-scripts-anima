@@ -114,8 +114,33 @@ window.taggerSourcesMixin = {
       if (body.status === 'success' && body.data && body.data.path) {
         this.taggerSourcePath = body.data.path;
         await this.scanTaggerSource();
+      } else {
+        const msg = String(body?.message || '');
+        if (msg.indexOf('unavailable') !== -1) {
+          this.toast(this.t('common.localPickerNA'), 'error');
+        } else if (body?.status === 'cancelled' || msg.indexOf('cancelled') !== -1) {
+          this.toast(this.t('common.localPickerCancelled'));
+        } else {
+          this.toast(this.localizeApiError?.(body, 'common.localPickerNA') || msg || this.t('common.localPickerNA'), 'error');
+        }
       }
-    } catch (_) { if (isCurrent()) this.toast(this.t('common.localPickerNA')); }
+    } catch (_) { if (isCurrent()) this.toast(this.t('common.localPickerNA'), 'error'); }
+  },
+
+  browseTaggerFolder() {
+    if (this.taggerRunning || this.taggerStarting || this.taggerScanning || this.captionPreviewBusy) return;
+    if (typeof this.builtinFilePicker !== 'function') return;
+    const route = this.currentRoute, mode = this.taggerSourceMode, version = this._taggerFormVersion;
+    return this.builtinFilePicker('tagger_source_dir', 'file-folder', {
+      label: this.t('tagger.imageDir'),
+      getValue: () => this.taggerSourcePath,
+      setValue: (value) => {
+        if (this.currentRoute !== route || this.taggerSourceMode !== mode || this._taggerFormVersion !== version) return;
+        this.taggerSourcePath = value;
+        void this.scanTaggerSource();
+      },
+      isCurrent: () => this.currentRoute === route && this.taggerSourceMode === mode && this._taggerFormVersion === version,
+    });
   },
 
   scheduleTaggerSourceScan() {

@@ -381,6 +381,9 @@ window.captionOptionsMixin = {
     this.saveCaptionOptions();
   },
   async pickCaptionPath(key) {
+    if (!this.localPickerAvailable && typeof this.browseCaptionPath === 'function') {
+      return this.browseCaptionPath(key);
+    }
     try {
       const body = await (await fetch(this.nativePickerUrl('text-file'))).json();
       if (body.status === 'success' && body.data?.path) { this.captionOptions[key] = body.data.path; this.saveCaptionOptions(); }

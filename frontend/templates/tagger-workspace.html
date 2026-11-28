@@ -27,7 +27,8 @@
             <div class="field-input-row field-input-wrap">
               <input id="tagger-source-folder" type="text" x-model="taggerSourcePath" spellcheck="false" @input="scheduleTaggerSourceScan()" @keydown.enter.prevent="scanTaggerSource()" :placeholder="t('tagger.sourcePath')">
               <div class="field-input-actions">
-                <button type="button" class="btn-icon" x-show="localPickerAvailable" @click="pickTaggerSource()" :title="t('common.browse')" :aria-label="t('common.browse')"><svg aria-hidden="true"><use href="#ti-folder"></use></svg></button>
+                <button type="button" class="btn-icon" x-show="localPickerAvailable" @click="pickTaggerSource()" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg aria-hidden="true"><use href="#ti-folder"></use></svg></button>
+                <button type="button" class="btn-icon" @click="browseTaggerFolder()" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
               </div>
             </div>
           </div>
@@ -181,12 +182,13 @@
     >
       <div class="tool-single-main">
         <section class="tool-preview" x-workspace-part="single-preview"
-                 x-data="{previewImageUrl: () => taggerPreviewUrl(taggerSelectedIndex), previewDisabled: () => taggerRunning || taggerStarting || taggerScanning, choosePreviewImage: () => pickTaggerSource()}"
+                 x-data="{previewImageUrl: () => taggerPreviewUrl(taggerSelectedIndex), previewDisabled: () => taggerRunning || taggerStarting || taggerScanning, choosePreviewImage: () => document.getElementById('taggerFileInput')?.click()}"
                  :class="{'drag-over':taggerDragOver, empty:!taggerSource}" @dragover.prevent="taggerDragOver = true"
                  @dragleave="if (!$el.contains($event.relatedTarget)) taggerDragOver = false" @drop.prevent="handleTaggerDrop($event)"></section>
 
         <div class="tool-single-actions">
-          <button type="button" class="btn btn-secondary" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="pickTaggerSource()"><svg aria-hidden="true"><use href="#ti-image"></use></svg><span x-text="t('caption.chooseImage')"></span></button>
+          <button type="button" class="btn btn-secondary" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="document.getElementById('taggerFileInput')?.click()"><svg aria-hidden="true"><use href="#ti-image"></use></svg><span x-text="t('caption.chooseImage')"></span></button>
+          <button type="button" class="btn btn-secondary" x-show="localPickerAvailable" :disabled="taggerRunning || taggerStarting || taggerScanning" @click="pickTaggerSource()" :title="t('common.browse')" :aria-label="t('common.browse')"><svg aria-hidden="true"><use href="#ti-folder"></use></svg></button>
           <button type="button" class="btn btn-ghost tool-clear-button" x-show="!taggerRunning" :disabled="!taggerSource || taggerStarting || taggerScanning" @click="clearTaggerSource()" x-text="t('common.clear')"></button>
           <button type="button" class="btn btn-start tool-action" x-show="!taggerRunning" @click="startTagger()" :disabled="!taggerCanStart()"><svg><use href="#ti-play"></use></svg><span x-text="taggerStartLabel()"></span></button>
           <button type="button" class="btn btn-stop tool-action" x-show="taggerRunning" @click="cancelTagger()"><svg><use href="#ti-stop"></use></svg><span x-text="t('tagger.stop')"></span></button>

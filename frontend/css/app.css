@@ -2055,6 +2055,16 @@ dialog.modal-overlay::backdrop { background: transparent; }
 }
 .picker-filter-row .input { flex: 1; }
 .picker-kbd-hint { font-size: 11px; color: var(--text-tertiary); white-space: nowrap; }
+.picker-train-toolbar {
+  display: flex; align-items: center; padding: 8px 22px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-surface-raised);
+}
+.picker-train-toolbar-actions,
+.picker-mkdir-inline {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+}
+.picker-mkdir-inline .input { flex: 1; min-width: 0; height: 28px; padding: 0 10px; font-size: 12px; }
 .picker-list { flex: 1; overflow-y: auto; padding: 8px 12px; }
 .picker-group-header {
   padding: 10px 10px 4px; font-size: 11px; font-weight: 600; color: var(--text-tertiary);
@@ -4835,8 +4845,9 @@ body.te-preview-resizing, body.te-preview-resizing * { cursor: row-resize !impor
 .te-dataset-button { max-width: 260px; }
 .te-dataset-button > svg { flex-shrink: 0; }
 .te-dataset-button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); --loop-marquee-gutter-left: 3px; }
-.te-dataset-switch { position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; display: flex; gap: 6px; width: min(520px, 70vw); padding: 8px; border: 1px solid var(--border-default); background: var(--bg-surface-raised); box-shadow: var(--shadow-lg); }
-.te-dataset-switch input { flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--border-input); background: var(--bg-input); color: var(--text-primary); font-family: var(--font-mono); font-size: 11px; }
+.te-dataset-switch { position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; display: flex; align-items: center; gap: 6px; width: min(520px, 70vw); padding: 8px; border: 1px solid var(--border-default); background: var(--bg-surface-raised); box-shadow: var(--shadow-lg); }
+.te-dataset-switch .field-input-wrap { flex: 1; min-width: 0; }
+.te-dataset-switch .field-input-wrap input[type="text"] { font-family: var(--font-mono); }
 
 /* ===== Shared Components ===== */
 .te-suggest {
@@ -4933,7 +4944,7 @@ body.te-lightbox-open { overflow: hidden; }
 .te-empty-icon { margin-bottom: 8px; opacity: 0.4; display: flex; justify-content: center; }
 .te-empty-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
 .te-empty-actions { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; align-items: center; }
-.te-empty-actions input { font-size: 12px; padding: 5px 8px; border: 1px solid var(--border-input); border-radius: var(--radius-control); background: var(--bg-input); color: var(--text-primary); width: 280px; max-width: 100%; outline: none; }
+.te-empty-actions .field-input-wrap { flex: 0 1 280px; width: 280px; max-width: 100%; }
 .te-recursive-toggle.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
 /* ===== Saving Overlay ===== */

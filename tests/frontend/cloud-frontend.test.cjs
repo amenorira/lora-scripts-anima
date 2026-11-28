@@ -243,6 +243,29 @@ test('notifications deduplicate identical active (type, message) toasts by refre
   assert.equal(first.removed, true);
 });
 
+test('pickTaggerSource reports non-success picker responses cleanly', async () => {
+  const toasts = [];
+  let pickerPayload = { status: 'error', message: 'native picker unavailable in headless mode' };
+  const { window } = loadFrontend('tagger/index', {
+    window: {},
+    URLSearchParams,
+    fetch: async () => ({ json: async () => pickerPayload }),
+  });
+  const app = composeMixins(window.utilsMixin, window.taggerMixin, {
+    currentRoute: 'tagger',
+    taggerSourceMode: 'single',
+    taggerSourcePath: '',
+    t: key => key,
+    toast: (msg, type) => toasts.push({ msg, type }),
+  });
+  await app.pickTaggerSource();
+  assert.deepEqual(toasts[0], { msg: 'common.localPickerNA', type: 'error' });
+
+  pickerPayload = { status: 'cancelled', message: 'cancelled' };
+  await app.pickTaggerSource();
+  assert.deepEqual(toasts[1], { msg: 'common.localPickerCancelled', type: undefined });
+});
+
 test('training/toml emits deduplicated training-start-error toasts and uses window.copyToClipboard', async () => {
   const toasts = [];
   const copied = [];

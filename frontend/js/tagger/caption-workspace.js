@@ -592,6 +592,22 @@ window.captionWorkspaceMixin = {
     this.captionCheckPrompt = this.captionDefaultPrompt;
     this.captionPromptOpen = true;
   },
+  browseCaptionPath(key) {
+    if (this.captionBatchRunning?.() || this.captionPreviewBusy || this.taggerStarting) return;
+    if (typeof this.builtinFilePicker !== 'function') return;
+    const route = this.currentRoute, version = this._taggerFormVersion;
+    const labelKey = key === 'prompt_file' ? 'moss.prompt_file' : 'moss.knowledge_file';
+    return this.builtinFilePicker(key, 'text-file', {
+      label: this.t(labelKey),
+      getValue: () => this.captionOptions[key] || '',
+      setValue: (value) => {
+        if (this.currentRoute !== route || this._taggerFormVersion !== version) return;
+        this.captionOptions[key] = value;
+        this.saveCaptionOptions();
+      },
+      isCurrent: () => this.currentRoute === route && this._taggerFormVersion === version,
+    });
+  },
 };
 
 // Candidate selection and clipboard handling are shared by preview and detail.

@@ -2566,7 +2566,12 @@
 		"resetAllHint": "重置当前训练类型为默认值",
 		"exportConfig": "导出",
 		"exportConfigHint": "导出可移植 YAML 配置文件",
-		"emptyParameterPreview": "暂无可预览的参数"
+		"emptyParameterPreview": "暂无可预览的参数",
+		"create": "创建",
+		"pickerNewFolder": "新建文件夹",
+		"pickerNewFolderPlaceholder": "输入文件夹名称…",
+		"pickerMkdirDone": "已创建文件夹 {name}",
+		"pickerMkdirFailed": "创建文件夹失败"
 	},
 	"tagger": {
 		"includeOutput": "纳入输出",

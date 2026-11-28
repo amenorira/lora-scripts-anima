@@ -660,6 +660,62 @@ window.tagEditorSession = {
     } else run();
   },
 
+  async tagEditorPickLocalFolder(mode = 'empty') {
+    var route = this.currentRoute;
+    var isSwitch = mode === 'switch';
+    var request = this._tePickerRequest = Number(this._tePickerRequest || 0) + 1;
+    var isCurrent = () => request === this._tePickerRequest && this.currentRoute === route;
+    var url = typeof this.nativePickerUrl === 'function'
+      ? this.nativePickerUrl('folder')
+      : window.animaUrl('/api/pick_file?picker_type=folder');
+    try {
+      var response = await fetch(url);
+      var body = await response.json();
+      if (!isCurrent()) return;
+      if (body.status === 'success' && body.data && body.data.path) {
+        if (isSwitch) {
+          this.tagEditorPendingDir = body.data.path;
+          this.tagEditorConfirmSwitch();
+        } else {
+          this.tagEditorDir = body.data.path;
+          void this.tagEditorLoad(body.data.path);
+        }
+      } else {
+        var msg = String(body?.message || '');
+        if (msg.indexOf('unavailable') !== -1) {
+          this.toast(this.t('common.localPickerNA'), 'error');
+        } else if (body?.status === 'cancelled' || msg.indexOf('cancelled') !== -1) {
+          this.toast(this.t('common.localPickerCancelled'));
+        } else {
+          this.toast(this.localizeApiError?.(body, 'common.localPickerNA') || msg || this.t('common.localPickerNA'), 'error');
+        }
+      }
+    } catch (_) {
+      if (isCurrent()) this.toast(this.t('common.localPickerNA'), 'error');
+    }
+  },
+
+  tagEditorBrowseFolder(mode = 'empty') {
+    if (typeof this.builtinFilePicker !== 'function') return;
+    var route = this.currentRoute;
+    var isSwitch = mode === 'switch';
+    return this.builtinFilePicker('tag_editor_dir', 'file-folder', {
+      label: this.t('tagEditor.title'),
+      getValue: () => isSwitch ? (this.tagEditorPendingDir || this.tagEditorLoadedDir || this.tagEditorDir || '') : (this.tagEditorDir || ''),
+      setValue: (value) => {
+        if (this.currentRoute !== route || !value) return;
+        if (isSwitch) {
+          this.tagEditorPendingDir = value;
+          this.tagEditorConfirmSwitch();
+        } else {
+          this.tagEditorDir = value;
+          void this.tagEditorLoad(value);
+        }
+      },
+      isCurrent: () => this.currentRoute === route,
+    });
+  },
+
   tagEditorCloseDataset() {
     var self = this;
     var closeNow = function() {

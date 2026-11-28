@@ -2566,7 +2566,12 @@
 		"resetAllHint": "現在の学習種類を既定値に戻す",
 		"exportConfig": "エクスポート",
 		"exportConfigHint": "ポータブル YAML 設定をエクスポート",
-		"emptyParameterPreview": "プレビューできるパラメータがありません"
+		"emptyParameterPreview": "プレビューできるパラメータがありません",
+		"create": "作成",
+		"pickerNewFolder": "新規フォルダ",
+		"pickerNewFolderPlaceholder": "フォルダ名を入力…",
+		"pickerMkdirDone": "フォルダ {name} を作成しました",
+		"pickerMkdirFailed": "フォルダを作成できませんでした"
 	},
 	"tagger": {
 		"includeOutput": "含める",

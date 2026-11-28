@@ -838,8 +838,14 @@
           </div>
           <div class="te-empty-title" x-text="t('tagEditor.noImages')"></div>
           <div class="te-empty-actions">
-            <input type="text" x-model="tagEditorDir" :placeholder="t('tagEditor.datasetDirPlaceholder')"
-              @keydown.enter="tagEditorLoad(tagEditorDir)">
+            <div class="field-input-wrap">
+              <input type="text" x-model="tagEditorDir" :placeholder="t('tagEditor.datasetDirPlaceholder')"
+                @keydown.enter="tagEditorLoad(tagEditorDir)">
+              <div class="field-input-actions">
+                <button type="button" class="btn-icon" x-show="localPickerAvailable" @click="tagEditorPickLocalFolder('empty')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+                <button type="button" class="btn-icon" @click="tagEditorBrowseFolder('empty')" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+              </div>
+            </div>
             <button class="btn btn-primary btn-sm" @click="tagEditorLoad(tagEditorDir)" x-text="t('tagEditor.loadImages')"></button>
             <button class="btn btn-ghost btn-sm" @click="tagEditorLoad(form.train_data_dir)" x-text="t('tagEditor.loadFromTraining')"></button>
             <button class="btn btn-ghost btn-sm te-recursive-toggle" @click="tagEditorToggleRecursive()"
@@ -888,7 +894,13 @@
                 <span x-loop-marquee.bounce><span x-text="tagEditorLoadedDir || tagEditorDir"></span></span>
               </button>
               <div class="te-dataset-switch" x-show="tagEditorSwitchOpen" @click.outside="tagEditorSwitchOpen = false">
-                <input id="te-switch-dir-input" type="text" x-model="tagEditorPendingDir" :placeholder="t('tagEditor.datasetDirPlaceholder')" @keydown.enter="tagEditorConfirmSwitch()" @keydown.escape="tagEditorSwitchOpen = false">
+                <div class="field-input-wrap">
+                  <input id="te-switch-dir-input" type="text" x-model="tagEditorPendingDir" :placeholder="t('tagEditor.datasetDirPlaceholder')" @keydown.enter="tagEditorConfirmSwitch()" @keydown.escape="tagEditorSwitchOpen = false">
+                  <div class="field-input-actions">
+                    <button type="button" class="btn-icon" x-show="localPickerAvailable" @click="tagEditorPickLocalFolder('switch')" :title="t('common.localPicker')" :aria-label="t('common.browseLocal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+                    <button type="button" class="btn-icon" @click="tagEditorBrowseFolder('switch')" :title="t('common.builtinBrowser')" :aria-label="t('common.searchBuiltin')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></button>
+                  </div>
+                </div>
                 <button class="btn btn-primary btn-sm" @click="tagEditorConfirmSwitch()" x-text="t('tagEditor.switchDataset')"></button>
               </div>
             </div>
@@ -1950,7 +1962,7 @@
 <!-- ── Built-in File Picker Modal ─────────────────────── -->
 <!-- 内置文件浏览器：builtinFilePicker() 先打开弹窗，再拉取 /api/get_files 列表。
      标题显示目标字段与扫描目录，当前值高亮，支持 ↑↓/Enter/Esc 键盘操作。 -->
-<dialog class="modal-overlay" x-dialog="showFilePickerModalFlag" @click.self="closeFilePickerModal()"
+<dialog id="pickerModal" class="modal-overlay" x-dialog="showFilePickerModalFlag" @click.self="closeFilePickerModal()"
         @dialog-close="closeFilePickerModal()" :aria-label="pickerTitle()" x-cloak>
   <div class="modal picker-modal">
     <div class="modal-header picker-header">
@@ -1971,6 +1983,20 @@
              :placeholder="t('common.pickerSearchPlaceholder')">
       <span class="picker-kbd-hint" x-text="t('common.pickerKbdHint')"></span>
     </div>
+    <div class="picker-train-toolbar" x-show="_pickerKind === 'train-dir'">
+      <template x-if="!_pickerMkdirOpen">
+        <div class="picker-train-toolbar-actions">
+          <button type="button" class="btn btn-secondary btn-sm" @click="pickerOpenMkdir()" :disabled="_pickerLoading" x-text="t('common.pickerNewFolder')"></button>
+        </div>
+      </template>
+      <template x-if="_pickerMkdirOpen">
+        <div class="picker-mkdir-inline">
+          <input id="pickerMkdirInput" type="text" class="input" x-model="_pickerMkdirName" :disabled="_pickerMkdirBusy" :placeholder="t('common.pickerNewFolderPlaceholder')" @keydown.enter.prevent="pickerSubmitMkdir()" @keydown.escape.stop="pickerCloseMkdir()">
+          <button type="button" class="btn btn-primary btn-sm" @click="pickerSubmitMkdir()" :disabled="_pickerMkdirBusy || !_pickerMkdirName.trim()" x-text="t('common.create')"></button>
+          <button type="button" class="btn btn-ghost btn-sm" @click="pickerCloseMkdir()" :disabled="_pickerMkdirBusy" x-text="t('common.cancel')"></button>
+        </div>
+      </template>
+    </div>
     <div class="picker-list" x-loop-marquee-delegate="{ host: '.picker-row', target: '.picker-row-name' }">
       <p class="picker-empty" x-show="_pickerLoading" x-text="t('common.pickerLoading')" role="status"></p>
       <div class="picker-empty" x-show="!_pickerLoading && _pickerError" role="alert">
@@ -1984,8 +2010,8 @@
           <template x-for="(f, index) in group.files" :key="f.path">
             <div class="picker-row loop-marquee-host" :class="{ 'is-current': pickerIsCurrent(f), 'is-kb-active': group.start + index === _pickerIndex }"
                  @click="pickFileFromModal(f)" :title="f.path">
-              <svg class="picker-row-icon" x-show="!['train-dir', 'reg-dir'].includes(_pickerKind)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              <svg class="picker-row-icon" x-show="['train-dir', 'reg-dir'].includes(_pickerKind)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <svg class="picker-row-icon" x-show="!_pickerIsDirKind()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <svg class="picker-row-icon" x-show="_pickerIsDirKind()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
               <div class="picker-row-main">
                 <div class="picker-row-title">
                   <span class="picker-row-name"><span x-text="f.name || ''"></span></span>

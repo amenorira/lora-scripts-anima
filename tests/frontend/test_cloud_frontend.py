@@ -22,6 +22,18 @@ class CloudFrontendTests(unittest.TestCase):
         self.assertTrue(scripts, "Expected defer script tags in frontend/index.html")
         self.assertEqual(scripts[0], "anima-ui/js/shared/net.js")
 
+    def test_templates_expose_cloud_picker_and_upload_elements(self):
+        index_html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+        self.assertIn('id="pickerModal"', index_html)
+
+        tagger_tpl = (FRONTEND / "templates" / "tagger-workspace.html").read_text(encoding="utf-8")
+        self.assertIsNotNone(re.search(r'<input\b[^>]*id="taggerFileInput"[^>]*type="file"', tagger_tpl))
+        self.assertIn('localPickerAvailable', tagger_tpl)
+
+        caption_tpl = (FRONTEND / "templates" / "caption-workspace.html").read_text(encoding="utf-8")
+        self.assertIn('localPickerAvailable', caption_tpl)
+        self.assertIn('taggerFileInput', caption_tpl)
+
     def test_all_frontend_js_files_pass_node_syntax_check(self):
         node = shutil.which("node")
         self.assertIsNotNone(node, "Install Node.js to validate JS syntax")

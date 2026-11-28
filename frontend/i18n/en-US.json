@@ -2566,7 +2566,12 @@
 		"resetAllHint": "Reset current training type to defaults",
 		"exportConfig": "Export",
 		"exportConfigHint": "Export portable YAML configuration",
-		"emptyParameterPreview": "No parameters to preview"
+		"emptyParameterPreview": "No parameters to preview",
+		"create": "Create",
+		"pickerNewFolder": "New folder",
+		"pickerNewFolderPlaceholder": "Folder name…",
+		"pickerMkdirDone": "Created folder {name}",
+		"pickerMkdirFailed": "Failed to create folder"
 	},
 	"tagger": {
 		"includeOutput": "Include",
