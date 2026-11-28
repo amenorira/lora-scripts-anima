@@ -2578,7 +2578,9 @@
 		"pickerNewFolder": "新建文件夹",
 		"pickerNewFolderPlaceholder": "输入文件夹名称…",
 		"pickerMkdirDone": "已创建文件夹 {name}",
-		"pickerMkdirFailed": "创建文件夹失败"
+		"pickerMkdirFailed": "创建文件夹失败",
+		"resetAllConfirmTitle": "重置训练参数",
+		"resetAllConfirmMessage": "确定将「{type}」的所有参数恢复为默认值吗？当前表单中的修改将被清空。"
 	},
 	"tagger": {
 		"includeOutput": "纳入输出",

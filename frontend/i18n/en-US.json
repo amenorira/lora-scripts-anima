@@ -2578,7 +2578,9 @@
 		"pickerNewFolder": "New folder",
 		"pickerNewFolderPlaceholder": "Folder name…",
 		"pickerMkdirDone": "Created folder {name}",
-		"pickerMkdirFailed": "Failed to create folder"
+		"pickerMkdirFailed": "Failed to create folder",
+		"resetAllConfirmTitle": "Reset training settings",
+		"resetAllConfirmMessage": "Reset all \"{type}\" parameters to defaults? Current form edits will be discarded."
 	},
 	"tagger": {
 		"includeOutput": "Include",

@@ -757,6 +757,17 @@ window.trainingCoreMixin = {
   },
 
   resetAllParams() {
+    const typeLabel = this.currentTrainTypeLabel || this.form.model_train_type || '';
+    this.openConfirm({
+      title: this.t('common.resetAllConfirmTitle'),
+      message: this.t('common.resetAllConfirmMessage').replace('{type}', typeLabel),
+      tone: 'warning',
+      actionLabel: this.t('common.resetAll'),
+      onConfirm: () => this._performResetAllParams(),
+    });
+  },
+
+  _performResetAllParams() {
     // 始终从当前训练类型的 registry 字段定义重新构建，不复用可能已被
     // 导入配置或参数联动修改过的 formDefaults。
     const currentTrainType = this.form.model_train_type;

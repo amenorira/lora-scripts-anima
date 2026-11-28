@@ -434,6 +434,74 @@ test('picker mkdir handles FastAPI detail and non-JSON proxy errors cleanly', as
   assert.deepEqual(toasts.at(-1), { msg: 'Failed to create folder', type: 'error' });
 });
 
+test('resetAllParams prompts with openConfirm before resetting form (cancelled vs confirmed)', () => {
+  const confirms = [];
+  let performed = 0;
+  const { window } = loadFrontend(['shared/utils', ...TRAINING_CORE_SCRIPTS], { window: {} });
+  const app = composeMixins(window.utilsMixin, window.trainingCoreMixin, {
+    form: { model_train_type: 'anima-lora', learning_rate: '9e-4' },
+    currentTrainTypeLabel: 'Anima LoRA',
+    t: translator('en-US'),
+    openConfirm(opts) { confirms.push(opts); },
+    _performResetAllParams() { performed++; this.form.learning_rate = '1e-4'; },
+  });
+
+  // Cancelled path: dialog opened without calling onConfirm -> form remains untouched.
+  app.resetAllParams();
+  assert.equal(performed, 0);
+  assert.equal(app.form.learning_rate, '9e-4');
+  assert.equal(confirms.length, 1);
+  assert.equal(confirms[0].tone, 'warning');
+
+  // Confirmed path: invoking onConfirm runs reset.
+  confirms[0].onConfirm();
+  assert.equal(performed, 1);
+  assert.equal(app.form.learning_rate, '1e-4');
+});
+
+test('trainingControlMixin defaults controlSaveWeights/controlSaveState to false and resets them on Stop dialog open', async () => {
+  const requests = [];
+  const { window } = loadFrontend('training/run-control', {
+    window: {},
+    fetch: async (url, opts = {}) => {
+      requests.push({ url, method: opts.method || 'GET', body: opts.body });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          state: 'running',
+          allowed: ['stop'],
+          updated_at: 10,
+          progress: { step: 50, total_steps: 100 },
+        }),
+      };
+    },
+  });
+  assert.equal(window.trainingControlMixin.controlSaveWeights, false);
+  assert.equal(window.trainingControlMixin.controlSaveState, false);
+
+  const app = composeMixins(window.trainingControlMixin, {
+    liveTaskId: 'task-1',
+    currentRoute: 'monitor-dashboard',
+    t: translator('en-US'),
+    toast() {},
+    scheduleRender() {},
+    _wakeTrainingStatePoll() {},
+  });
+
+  // Even if previously toggled on, opening the Stop dialog resets both flags to false.
+  app.controlSaveWeights = true;
+  app.controlSaveState = true;
+  await app.openTrainingControl('stop');
+  assert.equal(app.controlSaveWeights, false);
+  assert.equal(app.controlSaveState, false);
+
+  await app.submitTrainingControl('stop');
+  const postReq = requests.find(r => r.method === 'POST');
+  assert.ok(postReq);
+  assert.deepEqual(JSON.parse(postReq.body), { action: 'stop', mode: 'discard' });
+});
+
 test('tag editor directory inputs use shared field-input-wrap with local and built-in folder pickers and confirm dialog has no copy/fold details', () => {
   const html = readRepo('frontend/index.html');
   const css = readRepo('frontend/css/app.css');

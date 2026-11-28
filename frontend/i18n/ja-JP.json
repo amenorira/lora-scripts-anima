@@ -2578,7 +2578,9 @@
 		"pickerNewFolder": "新規フォルダ",
 		"pickerNewFolderPlaceholder": "フォルダ名を入力…",
 		"pickerMkdirDone": "フォルダ {name} を作成しました",
-		"pickerMkdirFailed": "フォルダを作成できませんでした"
+		"pickerMkdirFailed": "フォルダを作成できませんでした",
+		"resetAllConfirmTitle": "学習パラメータをリセット",
+		"resetAllConfirmMessage": "「{type}」のパラメータをすべて既定値に戻しますか？現在の変更は失われます。"
 	},
 	"tagger": {
 		"includeOutput": "含める",
