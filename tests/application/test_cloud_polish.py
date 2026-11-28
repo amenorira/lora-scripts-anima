@@ -214,6 +214,57 @@ class SystemCloudRoutesTests(unittest.TestCase):
         self.assertEqual(volumes[1]["free_bytes"], usage_b.free)
 
 
+class HardwareCgroupMemoryTests(unittest.TestCase):
+    def test_cgroup_v2_finite_limit_overrides_bare_metal_host_ram(self):
+        with tempfile.TemporaryDirectory() as td:
+            v2 = Path(td) / "v2"
+            v1 = Path(td) / "v1"
+            v2.mkdir()
+            limit = 16 * 1024**3
+            used = 4 * 1024**3
+            (v2 / "memory.max").write_text(f"{limit}\n", encoding="utf-8")
+            (v2 / "memory.current").write_text(f"{used}\n", encoding="utf-8")
+
+            res = hardware._read_cgroup_memory(v2_dir=v2, v1_dir=v1, host_total=128 * 1024**3)
+            self.assertEqual(res, (used, limit))
+
+            # Unlimited ("max") returns None
+            (v2 / "memory.max").write_text("max\n", encoding="utf-8")
+            self.assertIsNone(hardware._read_cgroup_memory(v2_dir=v2, v1_dir=v1, host_total=128 * 1024**3))
+
+            # Limit >= host_total returns None
+            (v2 / "memory.max").write_text(f"{256 * 1024**3}\n", encoding="utf-8")
+            self.assertIsNone(hardware._read_cgroup_memory(v2_dir=v2, v1_dir=v1, host_total=128 * 1024**3))
+
+    def test_cgroup_v1_fallback_and_sys_info_raw(self):
+        with tempfile.TemporaryDirectory() as td:
+            v2 = Path(td) / "v2_missing"
+            v1 = Path(td) / "v1"
+            v1.mkdir()
+            limit = 24 * 1024**3
+            used = 6 * 1024**3
+            (v1 / "memory.limit_in_bytes").write_text(f"{limit}\n", encoding="utf-8")
+            (v1 / "memory.usage_in_bytes").write_text(f"{used}\n", encoding="utf-8")
+
+            res = hardware._read_cgroup_memory(v2_dir=v2, v1_dir=v1, host_total=256 * 1024**3)
+            self.assertEqual(res, (used, limit))
+
+            # Huge sentinel treated as unlimited
+            (v1 / "memory.limit_in_bytes").write_text("9223372036854771712\n", encoding="utf-8")
+            self.assertIsNone(hardware._read_cgroup_memory(v2_dir=v2, v1_dir=v1, host_total=256 * 1024**3))
+
+        fake_mem = SimpleNamespace(total=256 * 1024**3, used=100 * 1024**3, percent=39.1)
+        with patch("psutil.cpu_percent", return_value=12.5), \
+             patch("psutil.virtual_memory", return_value=fake_mem), \
+             patch.object(hardware, "_get_cpu_name", return_value="Test CPU"), \
+             patch.object(hardware, "_read_cgroup_memory", return_value=(8 * 1024**3, 32 * 1024**3)):
+            info = hardware._sys_info_raw()
+        self.assertIsNotNone(info)
+        self.assertEqual(info["ram_used_gb"], 8.0)
+        self.assertEqual(info["ram_total_gb"], 32.0)
+        self.assertEqual(info["ram_pct"], 25.0)
+
+
 class LaunchUtilsAndCloudPolishTests(unittest.TestCase):
     def test_check_environment_checks_separate_output_and_models_mounts(self):
         with tempfile.TemporaryDirectory() as td:

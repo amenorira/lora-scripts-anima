@@ -7,6 +7,7 @@ import atexit
 import platform
 import threading
 import time as _time
+from pathlib import Path
 
 _nvml_ready = False
 
@@ -124,19 +125,61 @@ def _get_cpu_name() -> str:
     return _cpu_name_cache
 
 
+def _read_cgroup_memory(
+    *,
+    v2_dir: Path = Path("/sys/fs/cgroup"),
+    v1_dir: Path = Path("/sys/fs/cgroup/memory"),
+    host_total: int | None = None,
+) -> tuple[int, int] | None:
+    """Read container memory (used, limit) from Linux cgroup v2 or v1 when finite and < host RAM."""
+    # cgroup v2
+    try:
+        raw_max = (v2_dir / "memory.max").read_text(encoding="utf-8").strip()
+        if raw_max and raw_max != "max":
+            limit = int(raw_max)
+            used = int((v2_dir / "memory.current").read_text(encoding="utf-8").strip())
+            if limit > 0 and used >= 0 and (host_total is None or limit < host_total):
+                return used, limit
+    except (OSError, ValueError):
+        pass
+
+    # cgroup v1 fallback (unlimited is typically ~8 EiB sentinel >= 1 << 60)
+    try:
+        raw_limit = (v1_dir / "memory.limit_in_bytes").read_text(encoding="utf-8").strip()
+        limit = int(raw_limit)
+        if 0 < limit < (1 << 60) and (host_total is None or limit < host_total):
+            used = int((v1_dir / "memory.usage_in_bytes").read_text(encoding="utf-8").strip())
+            if used >= 0:
+                return used, limit
+    except (OSError, ValueError):
+        pass
+
+    return None
+
+
 def _sys_info_raw() -> dict | None:
-    """CPU / RAM 使用率"""
+    """CPU / RAM 使用率（容器环境下优先上报 cgroup 内存上限与用量）"""
     try:
         import psutil
         cpu = psutil.cpu_percent(interval=None)
         mem = psutil.virtual_memory()
         cpu_name = _get_cpu_name()
+        cgroup_mem = _read_cgroup_memory(host_total=mem.total)
+        if cgroup_mem is not None:
+            used_bytes, total_bytes = cgroup_mem
+            ram_used_gb = round(used_bytes / (1024**3), 1)
+            ram_total_gb = round(total_bytes / (1024**3), 1)
+            ram_pct = round(min(100.0, max(0.0, (used_bytes / total_bytes) * 100.0)), 1)
+        else:
+            ram_used_gb = round(mem.used / (1024**3), 1)
+            ram_total_gb = round(mem.total / (1024**3), 1)
+            ram_pct = mem.percent
         return {
             "cpu_name": cpu_name,
             "cpu_pct": cpu,
-            "ram_used_gb": round(mem.used / (1024**3), 1),
-            "ram_total_gb": round(mem.total / (1024**3), 1),
-            "ram_pct": mem.percent,
+            "ram_used_gb": ram_used_gb,
+            "ram_total_gb": ram_total_gb,
+            "ram_pct": ram_pct,
         }
     except Exception:
         return None
