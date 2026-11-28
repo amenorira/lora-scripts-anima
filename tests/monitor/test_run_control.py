@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -33,10 +34,13 @@ class TrainingControlTests(unittest.TestCase):
 
     def run_trainer(self, source, filename="trainer.py"):
         project = Path(__file__).resolve().parents[2]
+        sd_scripts = project / "vendor/sd-scripts"
         trainer = self.root / filename
         trainer.write_text(textwrap.dedent(source), encoding="utf-8")
+        # The desktop entry point loads the shared training loop beside the selected trainer.
+        shutil.copyfile(sd_scripts / "train_network.py", trainer.with_name("train_network.py"))
         env = {**os.environ, "ANIMA_RUN_CONTROL_DIR": str(self.root),
-               "PYTHONPATH": os.pathsep.join((str(project / "vendor/sd-scripts"), str(project)))}
+               "PYTHONPATH": os.pathsep.join((str(sd_scripts), str(project)))}
         result = subprocess.run([sys.executable, "-B", str(project / "backend/training/execution/sd_scripts_entry.py"),
                                  str(trainer)], env=env, capture_output=True, timeout=90)
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
