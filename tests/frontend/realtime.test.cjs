@@ -84,16 +84,20 @@ test('a delayed state poll cannot replace a newer server instance', async () => 
   assert.deepEqual(applied, []);
 });
 
-test('repeated online updates resume sample loading only on a state change', () => {
-  const { window } = loadFrontend('shared/realtime', { window: {} });
+test('preview media pauses only on offline and resumes on online state change', () => {
+  const { window } = loadFrontend('shared/realtime', { window: {}, setInterval: () => 1, clearInterval() {} });
   const media = [];
   const app = Object.assign({}, window.realtimeMixin, {
     setPreviewMediaPaused: value => media.push(value),
+    _updateDisconnectedDuration() {},
+    t: key => key, toast() {},
   });
   app._setRealtimeState('online');
   app._setRealtimeState('online');
   app._setRealtimeState('degraded');
   app._setRealtimeState('degraded');
+  app._setRealtimeState('offline');
+  app._setRealtimeState('offline');
   app._setRealtimeState('online');
   assert.deepEqual(media, [false, true, false]);
 });

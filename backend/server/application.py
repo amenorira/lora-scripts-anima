@@ -3,6 +3,7 @@ import ipaddress
 import mimetypes
 import os
 from pathlib import Path
+import re
 import sys
 from contextlib import asynccontextmanager
 
@@ -16,7 +17,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.server.api import router as api_router
-from backend.server.auth import BasicAuthMiddleware, get_route_path
+from backend.server.auth import BasicAuthMiddleware, WS_TOKEN_TTL, get_route_path, issue_ws_token
 from backend.server.routes.training import router as training_router
 from backend.tensorboard_service import PREFIX, service as tensorboard
 from backend.server.proxy import router as proxy_router
@@ -37,6 +38,7 @@ mimetypes.add_type(ext=".js", type="application/javascript")
 mimetypes.add_type(ext=".css", type="text/css")
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+_PUBLIC_CACHE_RE = re.compile(r"\bpublic\b", re.IGNORECASE)
 
 
 class SPAStaticFiles(StaticFiles):
@@ -194,21 +196,29 @@ _IMMUTABLE_PREVIEW_PATHS = {"/api/image-preview", "/api/monitor/preview-metadata
 _DICTIONARY_ASSET_PREFIX = "/api/tageditor/dictionary/asset/"
 
 
-def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
+def apply_cache_policy(url: URL, headers: MutableHeaders, *, auth_enabled: bool = False) -> None:
     """按资源类型分级缓存策略：
 
-    - 生成类预览保留自身的缓存头和 ETag
+    - 生成类预览保留自身的缓存头和 ETag（启用认证时降级 public 为 private）
+    - 健康检查与认证令牌响应一律禁止缓存（no-store）
     - 带内容哈希的词典内容文件长期缓存；manifest 保持 revalidate
     - /api/ 一律 revalidate（no-cache），稳定注册表靠各自 ETag 应答 304
     - 前端资源与 HTML 入口每次重新校验，包括带版本查询串的资源
     - 图片/字体/图标短缓存；未版本化的 JS/CSS 不缓存
+    - 启用认证时所有原本为 public 的静态资源缓存头降级为 private，防止共享代理缓存受保护内容
     """
     path = url.path
-    if path in _IMMUTABLE_PREVIEW_PATHS:
+    if path in {"/healthz", "/api/auth/ws-token"}:
+        headers["Cache-Control"] = "no-store"
         return
+    if path in _IMMUTABLE_PREVIEW_PATHS:
+        if auth_enabled and "cache-control" in headers:
+            headers["Cache-Control"] = _PUBLIC_CACHE_RE.sub("private", headers["Cache-Control"])
+        return
+    visibility = "private" if auth_enabled else "public"
     if path.startswith(_DICTIONARY_ASSET_PREFIX):
         if url.query and not path.endswith("/manifest.json"):
-            headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            headers["Cache-Control"] = f"{visibility}, max-age=31536000, immutable"
         else:
             headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.startswith("/api/"):
@@ -216,16 +226,19 @@ def apply_cache_policy(url: URL, headers: MutableHeaders) -> None:
     elif path.startswith("/anima-ui/") or headers.get("content-type", "").startswith("text/html"):
         headers["Cache-Control"] = "no-cache, max-age=0"
     elif path.endswith((".png", ".ico", ".svg", ".woff2")):
-        headers["Cache-Control"] = "public, max-age=3600"
+        headers["Cache-Control"] = f"{visibility}, max-age=3600"
     elif path.endswith((".js", ".css")):
         headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    elif auth_enabled and "cache-control" in headers:
+        headers["Cache-Control"] = _PUBLIC_CACHE_RE.sub("private", headers["Cache-Control"])
 
 
 class CachePolicyMiddleware:
     """直接修改响应头，避免 BaseHTTPMiddleware 将正常断连报为无响应异常。"""
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, *, auth_enabled: bool = False) -> None:
         self.app = app
+        self.auth_enabled = auth_enabled
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -239,7 +252,7 @@ class CachePolicyMiddleware:
         async def send_with_cache_policy(message: Message) -> None:
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
-                apply_cache_policy(url, headers)
+                apply_cache_policy(url, headers, auth_enabled=self.auth_enabled)
                 if url.path.startswith(_DICTIONARY_ASSET_PREFIX) and message["status"] >= 400:
                     headers["Cache-Control"] = "no-store"
             await send(message)
@@ -247,9 +260,9 @@ class CachePolicyMiddleware:
         await self.app(scope, receive, send_with_cache_policy)
 
 
-app.add_middleware(CachePolicyMiddleware)
-
 auth_digest = os.environ.get("ANIMA_AUTH_DIGEST")
+app.add_middleware(CachePolicyMiddleware, auth_enabled=auth_digest is not None)
+
 if auth_digest is not None:
     app.add_middleware(BasicAuthMiddleware, digest=auth_digest)
 
@@ -261,6 +274,28 @@ if os.environ.get("ANIMA_DEV") == "1":
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+
+@app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+
+@app.post("/api/auth/ws-token")
+async def create_ws_token():
+    if auth_digest is None:
+        return JSONResponse(
+            {"token": "", "auth_enabled": False, "expires_in": 0},
+            headers={"Cache-Control": "no-store"},
+        )
+    return JSONResponse(
+        {
+            "token": issue_ws_token(auth_digest, ttl=WS_TOKEN_TTL),
+            "auth_enabled": True,
+            "expires_in": WS_TOKEN_TTL,
+        },
+        headers={"Cache-Control": "no-store"},
     )
 
 

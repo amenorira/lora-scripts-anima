@@ -97,6 +97,88 @@ test('triggerSafeDownload resolves subpath URL and surfaces JSON errors via onEr
   assert.deepEqual(JSON.parse(JSON.stringify(errors)), [{ status: 'fail', message: 'Missing dir' }]);
 });
 
+test('realtime uses remote-friendly thresholds and WS auth token flow (including 1008 refresh and 401 stop)', async () => {
+  const wsUrls = [];
+  const sockets = [];
+  class Socket {
+    static OPEN = 1;
+    static CONNECTING = 0;
+    constructor(url) { wsUrls.push(url); sockets.push(this); this.readyState = 0; }
+    close() { this.readyState = 3; }
+  }
+  const fetchCalls = [];
+  let tokenResponse = { status: 200, ok: true, json: async () => ({ token: 'tok-1', auth_enabled: true, expires_in: 300 }) };
+  const timers = [];
+  const toasts = [];
+  const { window } = loadFrontend('shared/realtime', {
+    window: { location: { protocol: 'https:', host: 'abc.trycloudflare.com', hostname: 'abc.trycloudflare.com', pathname: '/' } },
+    document: { baseURI: 'https://abc.trycloudflare.com/', hidden: false },
+    URL, WebSocket: Socket, AbortController,
+    setTimeout(cb, delay) { const t = { cb, delay }; timers.push(t); return t; },
+    clearTimeout(t) { if (t) t.cancelled = true; },
+    setInterval() { return 1; }, clearInterval() {},
+    fetch: async (url, opts) => {
+      fetchCalls.push({ url, method: opts?.method || 'GET' });
+      return tokenResponse;
+    },
+  });
+  const app = composeMixins(window.realtimeMixin, {
+    t: key => key,
+    toast: (msg, type, opts) => toasts.push({ msg, type, opts }),
+    setPreviewMediaPaused() {},
+    _wakeTrainingStatePoll() {},
+    _ensureRealtimeHealthProbe() {},
+  });
+
+  const timing = app._realtimeTiming();
+  assert.equal(timing.pingIntervalMs, 5000);
+  assert.equal(timing.degradedAgeMs, 10000);
+  assert.equal(timing.healthTimeoutMs, 5000);
+  assert.equal(timing.connectTimeoutMs, 15000);
+  assert.equal(timing.snapshotTimeoutMs, 15000);
+
+  await app._connectRealtimeWithAuth();
+  assert.equal(fetchCalls[0].url, '/api/auth/ws-token');
+  assert.equal(fetchCalls[0].method, 'POST');
+  assert.equal(wsUrls[0], 'wss://abc.trycloudflare.com/ws/realtime?token=tok-1');
+
+  // Close code 1008 invalidates token and fetches a fresh one on reconnect.
+  tokenResponse = { status: 200, ok: true, json: async () => ({ token: 'tok-2', auth_enabled: true, expires_in: 300 }) };
+  sockets[0].onclose({ code: 1008 });
+  assert.equal(app._realtimeWsToken, '');
+  const reconnectTimer = timers.findLast(t => !t.cancelled && t.delay === 500);
+  assert.ok(reconnectTimer);
+  reconnectTimer.cb();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(wsUrls[1], 'wss://abc.trycloudflare.com/ws/realtime?token=tok-2');
+
+  // Pre-ready close code 1006 (e.g. Uvicorn HTTP 403 after server restart)
+  // with a cached token must also invalidate the token and re-fetch /api/auth/ws-token
+  // while preserving normal reconnect backoff.
+  tokenResponse = { status: 200, ok: true, json: async () => ({ token: 'tok-3', auth_enabled: true, expires_in: 300 }) };
+  const callsBefore1006 = fetchCalls.length;
+  sockets[1].onclose({ code: 1006 });
+  assert.equal(app._realtimeWsToken, '');
+  assert.equal(app._realtimeWsAuthEnabled, null);
+  const retry1006 = timers.findLast(t => !t.cancelled && t.delay === 1000);
+  assert.ok(retry1006);
+  retry1006.cb();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fetchCalls.length, callsBefore1006 + 1);
+  assert.equal(wsUrls[2], 'wss://abc.trycloudflare.com/ws/realtime?token=tok-3');
+
+  // HTTP 401 stops silent reconnect loop and shows a deduplicated toast.
+  tokenResponse = { status: 401, ok: false, json: async () => ({}) };
+  sockets[2].onclose({ code: 1008 });
+  const retry401 = timers.findLast(t => !t.cancelled && t.delay === 500);
+  retry401.cb();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app._realtimeAuthBlocked, true);
+  assert.equal(wsUrls.length, 3);
+  assert.equal(toasts.length, 1);
+  assert.equal(toasts[0].opts.key, 'backend-auth-required');
+});
+
 test('currentOutputRunDir accepts canonical relative and external absolute paths while rejecting root sentinels', () => {
   const { window } = loadFrontend('monitor/core', { window: {} });
   const app = composeMixins(window.monitorCoreMixin, {});

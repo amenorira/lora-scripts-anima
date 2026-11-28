@@ -26,6 +26,7 @@ router = APIRouter()
 
 _MAX_CONNECTION_QUEUE = 64
 _ALLOWED_STATIC_TOPICS = {"server", "hardware", "artifacts"}
+_HEARTBEAT_INTERVAL = 25.0
 
 
 def _valid_topic(topic: Any) -> bool:
@@ -218,7 +219,11 @@ async def realtime_socket(websocket: WebSocket) -> None:
 
     async def send_loop() -> None:
         while True:
-            await websocket.send_json(await outbound.get())
+            try:
+                message = await asyncio.wait_for(outbound.get(), timeout=_HEARTBEAT_INTERVAL)
+            except asyncio.TimeoutError:
+                message = {"op": "heartbeat", "emitted_at": time.time()}
+            await websocket.send_json(message)
 
     receiver = asyncio.create_task(receive_loop())
     sender = asyncio.create_task(send_loop())

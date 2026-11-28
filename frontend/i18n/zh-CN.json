@@ -2519,6 +2519,7 @@
 		"viewGeneration": "查看生成任务",
 		"backendDisconnected": "后端已断开",
 		"backendDisconnectedToast": "后端连接已断开",
+		"backendAuthExpiredToast": "登录认证已失效，请刷新页面重新认证",
 		"backendReconnectedToast": "后端已重新连接",
 		"backendDelayed": "实时数据延迟",
 		"backendRestarted": "后端已重启，实时任务状态已刷新",

@@ -2519,6 +2519,7 @@
 		"viewGeneration": "View generation",
 		"backendDisconnected": "Backend disconnected",
 		"backendDisconnectedToast": "Backend connection lost",
+		"backendAuthExpiredToast": "Authentication expired. Reload the page to sign in again.",
 		"backendReconnectedToast": "Backend reconnected",
 		"backendDelayed": "Realtime data delayed",
 		"backendRestarted": "Backend restarted; live task state was refreshed",

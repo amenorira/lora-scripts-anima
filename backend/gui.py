@@ -145,6 +145,37 @@ def _auth_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _resolve_auth_digest(args: argparse.Namespace) -> str | None:
+    """Resolve auth digest from --auth, --auth-file, or ANIMA_AUTH; scrub plaintext env."""
+    env_auth = os.environ.pop("ANIMA_AUTH", None)
+    if args.auth_digest is not None:
+        return args.auth_digest
+
+    auth_file = getattr(args, "auth_file", None)
+    if auth_file:
+        try:
+            with open(auth_file, "r", encoding="utf-8") as fh:
+                raw = fh.read().splitlines()
+        except OSError as exc:
+            log.error("Failed to read --auth-file %s: %s / 读取认证文件失败", auth_file, exc)
+            raise SystemExit(2) from None
+        credential = next((line.strip() for line in raw if line.strip()), "")
+        try:
+            return _auth_digest(credential)
+        except argparse.ArgumentTypeError as exc:
+            log.error("Invalid credentials in --auth-file: %s", exc)
+            raise SystemExit(2) from None
+
+    if env_auth is not None and env_auth != "":
+        try:
+            return _auth_digest(env_auth)
+        except argparse.ArgumentTypeError as exc:
+            log.error("Invalid credentials in ANIMA_AUTH: %s", exc)
+            raise SystemExit(2) from None
+
+    return None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="LoRA training GUI (Anima suite)")
     parser.set_defaults(_port_explicit=False)
@@ -156,6 +187,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--listen", action="store_true", help="Listen on 0.0.0.0 (LAN access)")
     parser.add_argument("--auth", type=_auth_digest, dest="auth_digest", metavar="USERNAME:PASSWORD",
                         help="Require HTTP Basic authentication for the training UI")
+    parser.add_argument("--auth-file", type=str, default=None, metavar="PATH",
+                        help="Path to a file containing username:password for HTTP Basic authentication")
     parser.add_argument("--data-dir", type=str, default=None, metavar="DIR",
                         help="External base directory for models, output, config, and logs (env: ANIMA_DATA_DIR)")
     parser.add_argument("--root-path", type=str, default=None, metavar="PREFIX",
@@ -216,6 +249,14 @@ def launch(args: argparse.Namespace) -> None:
     if "backend.constants" in sys.modules:
         sys.modules["backend.constants"].refresh_storage_paths()
 
+    auth_digest = _resolve_auth_digest(args)
+    args.auth_digest = auth_digest
+    if auth_digest is None:
+        os.environ.pop("ANIMA_AUTH_DIGEST", None)
+    else:
+        # The reload worker needs the verifier, but child processes do not need the password.
+        os.environ["ANIMA_AUTH_DIGEST"] = auth_digest
+
     from backend.user_defaults import ensure_user_defaults
 
     ensure_user_defaults()
@@ -271,11 +312,6 @@ def launch(args: argparse.Namespace) -> None:
     forwarded_allow_ips = raw_forwarded.strip() or "127.0.0.1"
 
     os.environ["ANIMA_HOST"] = args.host
-    if args.auth_digest is None:
-        os.environ.pop("ANIMA_AUTH_DIGEST", None)
-    else:
-        # The reload worker needs the verifier, but child processes do not need the password.
-        os.environ["ANIMA_AUTH_DIGEST"] = args.auth_digest
     os.environ["ANIMA_PORT"] = str(args.port)
     os.environ["ANIMA_DISABLE_TENSORBOARD"] = "1" if args.disable_tensorboard else "0"
     os.environ["ANIMA_TENSORBOARD_PORT"] = str(args.tensorboard_port)

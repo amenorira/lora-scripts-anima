@@ -228,6 +228,10 @@ window.monitorCoreMixin = {
       const rawUrl = '/api/realtime/state?hardware=' + !this.realtimeReady + (this.liveTaskId ? '&task_id=' + encodeURIComponent(this.liveTaskId) : '');
       const url = window.animaUrl(rawUrl);
       const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+      if (response.status === 401) {
+        this._handleRealtimeAuthRequired?.();
+        return;
+      }
       if (!response.ok) throw new Error('state request failed');
       const body = await response.json();
       if (body.status !== 'success' || !body.data) throw new Error('invalid state response');

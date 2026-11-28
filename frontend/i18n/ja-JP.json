@@ -2519,6 +2519,7 @@
 		"viewGeneration": "生成状況を表示",
 		"backendDisconnected": "バックエンド未接続",
 		"backendDisconnectedToast": "バックエンドとの接続が切れました",
+		"backendAuthExpiredToast": "認証の有効期限が切れました。ページを再読み込みして再認証してください。",
 		"backendReconnectedToast": "バックエンドに再接続しました",
 		"backendDelayed": "リアルタイムデータに遅延があります",
 		"backendRestarted": "バックエンドが再起動し、実行中タスクの状態を更新しました",
