@@ -15,7 +15,7 @@ from markdown.extensions.toc import slugify_unicode
 from markdown.preprocessors import Preprocessor
 from markdown.treeprocessors import Treeprocessor
 
-from backend.constants import DOCS_DIR
+from backend.constants import DOCS_DIR, with_root_path
 from backend.server.models import APIResponseSuccess
 
 
@@ -155,7 +155,7 @@ def _asset_url(url: str, document_dir: PurePosixPath) -> str:
         posixpath.join(document_dir.as_posix(), unquote(parts.path))
     )
     encoded_path = quote(normalized, safe="/")
-    return urlunsplit(("", "", f"/api/docs/assets/{encoded_path}", parts.query, parts.fragment))
+    return urlunsplit(("", "", with_root_path(f"/api/docs/assets/{encoded_path}"), parts.query, parts.fragment))
 
 
 class _ResourceTreeprocessor(Treeprocessor):
@@ -268,7 +268,7 @@ async def get_doc(slug: str, locale: str = Query(_DEFAULT_LOCALE)):
     selected_locale = _normalize_locale(locale)
     path = _document_path(slug, selected_locale)
     source = path.read_text(encoding="utf-8")
-    relative_path = PurePosixPath(path.relative_to(DOCS_DIR).as_posix())
+    relative_path = PurePosixPath(path.relative_to(DOCS_DIR.resolve()).as_posix())
     html, toc = _render_markdown(source, relative_path)
     return APIResponseSuccess(
         data={

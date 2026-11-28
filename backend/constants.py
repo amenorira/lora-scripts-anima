@@ -85,6 +85,32 @@ def refresh_storage_paths() -> dict[str, Path]:
     return get_storage_roots()
 
 
+def get_root_path() -> str:
+    """读取并规范化 ANIMA_ROOT_PATH（返回 '' 或无尾斜杠的 '/prefix'）。"""
+    raw = os.environ.get("ANIMA_ROOT_PATH", "").strip()
+    if not raw:
+        return ""
+    normalized = "/" + raw.strip("/")
+    return "" if normalized == "/" else normalized
+
+
+def with_root_path(path: str) -> str:
+    """为应用内根相对路径幂等地添加 ANIMA_ROOT_PATH 前缀。"""
+    if not path:
+        return path
+    lower = path.lower()
+    if lower.startswith(("http://", "https://", "ws://", "wss://", "data:", "blob:")):
+        return path
+    prefix = get_root_path()
+    if not prefix:
+        return path
+    if path == prefix or path.startswith(prefix + "/"):
+        return path
+    if path.startswith("/"):
+        return prefix + path
+    return f"{prefix}/{path}"
+
+
 def resolve_project_path(raw: str | Path, default_root: Path | None = None) -> Path:
     """解析项目内或用户路径（展开 ~，并在未指定 default_root 时映射逻辑存储根目录）。"""
     value = Path(raw).expanduser()

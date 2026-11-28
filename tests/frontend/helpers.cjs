@@ -36,7 +36,7 @@ const FRONTEND_DEPENDENCIES = {
   'tag-editor/index': ['tag-editor/session', 'tag-editor/edits', 'tag-editor/persistence', 'tag-editor/view', 'tag-editor/actions', 'tag-editor/filters'],
   'environment/render': ['environment/dictionary-render', 'environment/components-render', 'environment/models-render', ],
 };
-const frontendScripts = files => ['shared/mixin-compose', 'shared/image-viewport', ...[].concat(files).flatMap(file => [
+const frontendScripts = files => ['shared/net', 'shared/mixin-compose', 'shared/image-viewport', ...[].concat(files).flatMap(file => [
   ...(FRONTEND_DEPENDENCIES[file.replace(/\.js$/, '')] || []), file,
 ])];
 

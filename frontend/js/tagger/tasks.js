@@ -74,7 +74,7 @@ window.taggerTasksMixin = {
           exclude_tags: this.taggerSourceMode === 'folder' ? this.taggerSettings.excludeTags : '',
         },
       };
-      const response = await fetch('/api/tagger/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const response = await fetch(window.animaUrl('/api/tagger/tasks'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'tagger.startFailed') || body.message || this.t('tagger.startFailed'));
       this._clearTaggerResultState(mode);
@@ -119,7 +119,8 @@ window.taggerTasksMixin = {
       && source === this.taggerSource && path === this.taggerSourcePath && currentTaskId === this.taggerTaskId
       && stored === localStorage.getItem(key);
     try {
-      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/status`);
+      const statusUrl = `/api/tagger/tasks/${encodeURIComponent(taskId)}/status`;
+      const response = await fetch(window.animaUrl(statusUrl));
       const body = await response.json();
       if (!isCurrent() || !this._taggerSameServer(instanceId, body.data)) return false;
       if (body.status !== 'success') {
@@ -255,7 +256,8 @@ window.taggerTasksMixin = {
     const request = this._taggerItemsRequest = (this._taggerItemsRequest || 0) + 1;
     try {
       const offset = reset ? 0 : Math.max(0, Number(this.taggerTask?.current || 0) - 80);
-      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/items?offset=${offset}&limit=160`);
+      const itemsUrl = `/api/tagger/tasks/${encodeURIComponent(taskId)}/items?offset=${offset}&limit=160`;
+      const response = await fetch(window.animaUrl(itemsUrl));
       const body = await response.json();
       if (taskId !== this.taggerTaskId || sourceMode !== this.taggerSourceMode || request !== this._taggerItemsRequest) return;
       if (!response.ok || body.status !== 'success') throw new Error('tagger items unavailable');
@@ -286,7 +288,8 @@ window.taggerTasksMixin = {
 
   async cancelTagger() {
     if (!this.taggerTaskId) return;
-    try { await fetch(`/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/cancel`, { method: 'POST' }); }
+    const cancelUrl = `/api/tagger/tasks/${encodeURIComponent(this.taggerTaskId)}/cancel`;
+    try { await fetch(window.animaUrl(cancelUrl), { method: 'POST' }); }
     catch (_) {}
   },
 
@@ -303,7 +306,8 @@ window.taggerTasksMixin = {
     let responseData;
     try {
       const stored = storageKey ? localStorage.getItem(storageKey) : null;
-      const response = await fetch(`/api/tagger/tasks/${encodeURIComponent(taskId)}/retry`, { method: 'POST' });
+      const retryUrl = `/api/tagger/tasks/${encodeURIComponent(taskId)}/retry`;
+      const response = await fetch(window.animaUrl(retryUrl), { method: 'POST' });
       const body = await response.json();
       responseData = body.data;
       const sameServer = this._taggerSameServer(instanceId, responseData);

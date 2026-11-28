@@ -97,7 +97,7 @@ window.taggerMixin = {
     const storageKey = ai ? 'anima-ai-tagger-task-id' : this._taggerTaskStorageKey();
     let taskId = '';
     try {
-      const response = await fetch('/api/tagger/tasks/active');
+      const response = await fetch(window.animaUrl('/api/tagger/tasks/active'));
       const body = await response.json();
       taskId = body.status === 'success' && body.data ? body.data.task_id || '' : '';
     } catch (_) {}
@@ -171,7 +171,7 @@ window.taggerMixin = {
 
   async loadTaggerModels() {
     try {
-      const response = await fetch('/api/tagger/models');
+      const response = await fetch(window.animaUrl('/api/tagger/models'));
       const body = await response.json();
       if (body.status !== 'success' || !body.data) {
         throw new Error(this.localizeApiError?.(body, 'tagger.modelRegistryUnavailable') || body.message || this.t('tagger.modelRegistryUnavailable'));
@@ -481,7 +481,8 @@ window.taggerMixin = {
       scope: 'tagger', source_token: this.taggerSource.source_token,
       index: String(index), variant: 'original'
     });
-    return `/api/image-preview?${params.toString()}`;
+    const url = `/api/image-preview?${params.toString()}`;
+    return window.animaUrl(url);
   },
 
   taggerPreviewTransform() {
@@ -705,15 +706,19 @@ window.taggerMixin = {
     if (!category) return;
     const text = category.visibleTags.map(tag => this.formatTaggerOutputName(tag[0])).join(', ');
     if (!text) return;
-    try { await navigator.clipboard.writeText(text); this.toast(this.t('tagger.copied')); }
-    catch (_) { this.toast(this.t('common.failed'), 'error'); }
+    try {
+      await window.copyToClipboard(text);
+      this.toast(this.t('tagger.copied'));
+    } catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
 
 
   async copyTaggerResult() {
     if (!this.taggerResultText) return;
-    try { await navigator.clipboard.writeText(this.taggerResultText); this.toast(this.t('tagger.copied')); }
-    catch (_) { this.toast(this.t('common.failed'), 'error'); }
+    try {
+      await window.copyToClipboard(this.taggerResultText);
+      this.toast(this.t('tagger.copied'));
+    } catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
 
   openTaggerDatasetInEditor() {

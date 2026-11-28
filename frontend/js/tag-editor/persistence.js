@@ -75,7 +75,7 @@ window.tagEditorPersistence = {
     });
 
     try {
-      var r = await fetch('/api/tageditor/save-all', {
+      var r = await fetch(window.animaUrl('/api/tageditor/save-all'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir: saveDir, images: payload })
@@ -211,7 +211,8 @@ window.tagEditorPersistence = {
     this._teTimelineAbort = controller;
     this.tagEditorSnapshotLoading = true;
     this.tagEditorSnapshotError = false;
-    fetch('/api/tageditor/timeline?dataset_dir=' + encodeURIComponent(this.tagEditorLoadedDir || this.tagEditorDir), { signal: controller.signal })
+    var timelineUrl = '/api/tageditor/timeline?dataset_dir=' + encodeURIComponent(this.tagEditorLoadedDir || this.tagEditorDir);
+    fetch(window.animaUrl(timelineUrl), { signal: controller.signal })
       .then(function(r) { return r.json(); }).then(function(j) {
         if (requestEpoch !== self._teLoadEpoch || controller.signal.aborted) return;
         if (j.status === 'success') {
@@ -275,7 +276,7 @@ window.tagEditorPersistence = {
           url = '/api/tageditor/restore-backup';
           options = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dir: dir }) };
         }
-        return fetch(url, options)
+        return fetch(window.animaUrl(url), options)
           .then(function(r) { return r.json(); }).then(function(j) {
             if (epoch !== self._teLoadEpoch) return;
             if (j.status !== 'success') {

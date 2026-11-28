@@ -48,7 +48,8 @@ window.monitorHistoryMixin = {
     this.historyRefreshing = manual;
     this.historyError = '';
     try {
-      const r = await fetch('/api/monitor/history' + (manual ? '?refresh=true' : ''));
+      const historyUrl = '/api/monitor/history' + (manual ? '?refresh=true' : '');
+      const r = await fetch(window.animaUrl(historyUrl));
       const d = await r.json();
       if (seq !== this._historyRequestSeq) return;
       if (d.status !== 'success') throw new Error(d.message || this.t('monitor.historyLoadError'));
@@ -102,7 +103,7 @@ window.monitorHistoryMixin = {
     this.historyDeleting = runDir;
     try {
       this.startProgress();
-      const r = await fetch('/api/monitor/history/delete', {
+      const r = await fetch(window.animaUrl('/api/monitor/history/delete'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ run_dir: runDir })
       });
@@ -166,7 +167,8 @@ window.monitorHistoryMixin = {
     const isCurrent = () => requestSeq === this._runDetailRequestSeq && this.selectedRunDir === runDir;
     try {
       this.startProgress();
-      const r = await fetch('/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir));
+      const runDetailUrl = '/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir);
+      const r = await fetch(window.animaUrl(runDetailUrl));
       const j = await r.json();
       if (!isCurrent()) return;
       if (j.status === 'success') {

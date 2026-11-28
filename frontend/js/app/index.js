@@ -85,8 +85,8 @@ document.addEventListener('alpine:init', () => {
       if (this.regularizationActive) return this.t('common.regularizationInProgress');
       return this.t('common.backendConnected');
     },
-    // 本地系统文件选择器是否可用（无图形环境的 Linux 服务器上不可用，对应按钮直接隐藏）
-    localPickerAvailable: true,
+    // 本地系统文件选择器是否可用（默认隐藏，避免无图形环境的云端/Linux 服务器首帧闪现按钮）
+    localPickerAvailable: false,
     trainFieldsLoadFailed: false,
 
       // ── Init ───────────────────────────────────────────────
@@ -128,11 +128,11 @@ document.addEventListener('alpine:init', () => {
       this.pageTitle = cfg.titleKey ? (this.t(cfg.titleKey) || cfg.title || route) : (cfg.title || route);
       document.title = this.pageTitle + ' | lora-scripts-anima';
 
-      void fetch('/api/version').then(async response => {
+      void fetch(window.animaUrl('/api/version')).then(async response => {
         const body = await response.json();
         this.version = response.ok && body.status === 'success' && body.data?.version || 'dev';
       }).catch(() => { this.version = 'dev'; });
-      void fetch('/api/file_picker_available').then(async response => {
+      void fetch(window.animaUrl('/api/file_picker_available')).then(async response => {
         const body = await response.json();
         if (body.status === 'success') this.localPickerAvailable = !!body.data.available;
       }).catch(() => {});
@@ -536,10 +536,9 @@ document.addEventListener('alpine:init', () => {
         if (typeof s.weakNetworkMode === 'boolean') {
           this.weakNetworkMode = s.weakNetworkMode;
         } else {
-          // No explicit choice stored: enable serialized thumbnail loading
-          // only on genuinely slow connections (2g/3g/save-data). Local and
-          // LAN users get native parallel thumbnail loading by default.
-          this.weakNetworkMode = this._detectSlowConnection();
+          // No explicit choice stored: enable serialized thumbnail loading on
+          // remote origins (cloud tunnels/proxies) or slow connections.
+          this.weakNetworkMode = window.isRemoteOrigin() || this._detectSlowConnection();
         }
       } catch(e){}
       this.sidebarCollapsed = localStorage.getItem('anima-sidebar-collapsed') === '1';
@@ -596,7 +595,9 @@ document.addEventListener('alpine:init', () => {
     renderTensorBoardPage() {
       const el = document.getElementById('tensorboardFrame');
       if (!el || el.querySelector('iframe')) return;
-      el.innerHTML = `<iframe src="/tensorboard/" title="TensorBoard" class="iframe-full"
+      const tbUrl = window.animaUrl('/tensorboard/');
+      const src = this.esc ? this.esc(tbUrl) : tbUrl;
+      el.innerHTML = `<iframe src="${src}" title="TensorBoard" class="iframe-full"
         onload="this.style.opacity='1'" style="opacity:0"></iframe>`;
     },
 

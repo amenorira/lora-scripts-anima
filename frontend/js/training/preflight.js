@@ -102,7 +102,7 @@ window.trainingPreflight = {
 
   async _requestStepEstimate(requestSeq, payload, reconcile = true) {
     try {
-      const response = await fetch('/api/training/estimate', {
+      const response = await fetch(window.animaUrl('/api/training/estimate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -239,7 +239,8 @@ window.trainingPreflight = {
       resume: payload.resume ? 'true' : 'false',
     });
     try {
-      const response = await fetch('/api/training/output-path-info?' + params.toString());
+      const infoUrl = '/api/training/output-path-info?' + params.toString();
+      const response = await fetch(window.animaUrl(infoUrl));
       const result = await response.json();
       if (requestSeq !== this._outputPathInfoRequestSeq) return null;
       if (!response.ok || result.status !== 'success' || !result.data) {
@@ -490,7 +491,7 @@ window.trainingPreflight = {
 
   async _checkKreaDitFormat(path, sequence) {
     try {
-      const response = await fetch('/api/training/krea2/model-format', {
+      const response = await fetch(window.animaUrl('/api/training/krea2/model-format'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }),
       });
       if (!response.ok) return;

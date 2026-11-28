@@ -3,8 +3,10 @@ window.monitorLogCoreMixin = {
   // ── Log helpers ────────────────────────────────────────
   async copyLogs() {
     const lines = this.logFullLines || [];
-    try { await navigator.clipboard.writeText(lines.join('\n')); this.toast(this.t('common.copied')); }
-    catch (_) { this.toast(this.t('common.failed'), 'error'); }
+    try {
+      await window.copyToClipboard(lines.join('\n'));
+      this.toast(this.t('common.copied'));
+    } catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
   _logPageSize() { return (window.UI_CONSTANTS && window.UI_CONSTANTS.LOG && window.UI_CONSTANTS.LOG.FULL_PAGE_SIZE) || 1000; },
 
@@ -137,7 +139,8 @@ window.monitorLogCoreMixin = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const r = await fetch('/api/monitor/log-slice?' + params.toString(), { signal: controller.signal });
+      const logSliceUrl = '/api/monitor/log-slice?' + params.toString();
+      const r = await fetch(window.animaUrl(logSliceUrl), { signal: controller.signal });
       const j = await r.json();
       const currentRunDir = this._logSliceRunDir();
       const currentTaskId = this._logSliceTaskId();
@@ -653,26 +656,13 @@ window.monitorLogRenderMixin = {
     if (runDir) params.set('run_dir', runDir);
     else params.set('task_id', taskId);
     const sourceKey = this._currentLogSourceKey();
-    // An attachment goes to the native download manager. Only a failure
-    // navigates this frame, so the actual GET can report errors in the app.
-    document.getElementById('monitor-log-download-frame')?.remove();
-    const frame = document.createElement('iframe');
-    frame.id = 'monitor-log-download-frame';
-    frame.hidden = true;
-    frame.onload = () => {
-      if (sourceKey !== this._currentLogSourceKey()) return;
-      let result = {};
-      try {
-        const doc = frame.contentDocument;
-        if (doc?.URL === 'about:blank') return;
-        result = JSON.parse(doc?.querySelector('pre')?.textContent || doc?.body?.textContent || '{}');
-      } catch (_) {
-        // Browser network-error pages may be opaque.
-      }
-      this.toast(this.localizeApiError(result, 'monitor.logDownloadFailed'), 'error', { details: this.apiErrorDetails(result) });
-    };
-    frame.src = '/api/monitor/log-download?' + params.toString();
-    document.body.appendChild(frame);
+    window.triggerSafeDownload('/api/monitor/log-download?' + params.toString(), {
+      frameId: 'monitor-log-download-frame',
+      isCurrent: () => sourceKey === this._currentLogSourceKey(),
+      onError: result => {
+        this.toast(this.localizeApiError(result, 'monitor.logDownloadFailed'), 'error', { details: this.apiErrorDetails(result) });
+      },
+    });
   },
 
 

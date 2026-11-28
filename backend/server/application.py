@@ -2,12 +2,13 @@ import asyncio
 import ipaddress
 import mimetypes
 import os
+from pathlib import Path
 import sys
 from contextlib import asynccontextmanager
 
 import fastapi.middleware.cors as fastapi_cors
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders, URL
 from starlette.exceptions import HTTPException
@@ -15,7 +16,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from backend.server.api import router as api_router
-from backend.server.auth import BasicAuthMiddleware
+from backend.server.auth import BasicAuthMiddleware, get_route_path
 from backend.server.routes.training import router as training_router
 from backend.tensorboard_service import PREFIX, service as tensorboard
 from backend.server.proxy import router as proxy_router
@@ -28,12 +29,14 @@ from backend.monitor.history import scan_history
 from backend.server.routes.realtime import router as realtime_router
 from backend.training.datasets.step_estimator import warm_up as warm_step_estimator
 from backend.training.shape_preview import warm_up as warm_shape_preview
-from backend.constants import REPO_ROOT, LOGS_DIR
+from backend.constants import LOGS_DIR, with_root_path
 from backend.startup_output import show_environment, show_ready, show_step
 
 # Windows 注册表常把 .js 映射成 text/plain，导致浏览器拒执行模块脚本
 mimetypes.add_type(ext=".js", type="application/javascript")
 mimetypes.add_type(ext=".css", type="text/css")
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
 
 class SPAStaticFiles(StaticFiles):
@@ -69,8 +72,11 @@ async def report_runtime_banner() -> None:
 
     host = os.environ.get("ANIMA_HOST", "127.0.0.1")
     port = os.environ.get("ANIMA_PORT", "12333")
+    root_path = os.environ.get("ANIMA_ROOT_PATH", "").strip().rstrip("/")
+    if root_path and not root_path.startswith("/"):
+        root_path = "/" + root_path
     browser_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
-    url = f"http://{browser_host}:{port}/"
+    url = f"http://{browser_host}:{port}{root_path}/"
 
     software = [
         f"App {os.environ.get('ANIMA_VERSION', 'unknown')}",
@@ -226,7 +232,9 @@ class CachePolicyMiddleware:
             await self.app(scope, receive, send)
             return
 
-        url = URL(scope=scope)
+        # Strip root_path so route-based cache rules work identically behind subpath proxies.
+        app_scope = {**scope, "root_path": "", "path": get_route_path(scope)}
+        url = URL(scope=app_scope)
 
         async def send_with_cache_policy(message: Message) -> None:
             if message["type"] == "http.response.start":
@@ -261,20 +269,31 @@ app.include_router(training_router, prefix="/api")
 app.include_router(monitor_router, prefix="/api")
 app.include_router(tageditor_router, prefix="/api")
 
-# Anima UI（SPA 前端）：静态资源 + 回退
-app.mount("/anima-ui", StaticFiles(directory="frontend", html=True), name="anima-ui")
+@app.get("/anima-ui")
+@app.get("/anima-ui/")
+@app.get("/anima-ui/index.html")
+async def redirect_anima_ui_entry(request: Request):
+    scope_root = (request.scope.get("root_path") or "").strip().strip("/")
+    target = f"/{scope_root}/" if scope_root else (with_root_path("/") or "/")
+    if request.url.query:
+        target = f"{target}?{request.url.query}"
+    return RedirectResponse(url=target, status_code=307)
+
+
+# Anima UI（SPA 前端）：静态资源 + 回退（锚定到仓库根目录而非当前工作目录）
+app.mount("/anima-ui", StaticFiles(directory=str(FRONTEND_DIR), html=False), name="anima-ui")
 
 
 @app.get("/")
 async def serve_index():
-    return FileResponse("frontend/index.html")
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 
 async def serve_favicon():
-    return FileResponse("frontend/assets/favicon-64.png")
+    return FileResponse(FRONTEND_DIR / "assets" / "favicon-64.png")
 
 
 app.add_api_route("/favicon.png", serve_favicon, methods=["GET"], response_class=FileResponse)
 
 
-app.mount("/", SPAStaticFiles(directory="frontend", html=True), name="static")
+app.mount("/", SPAStaticFiles(directory=str(FRONTEND_DIR), html=True), name="static")

@@ -47,8 +47,26 @@
 
     function show(message, type = '', options = {}) {
       message = String(message ?? '');
-      const key = options.key ?? Symbol();
-      if (records.has(key)) dismiss(key);
+      type = String(type ?? '');
+      const detailsText = options.details || (message.length > 220 || message.split('\n').length > 3 ? message : '');
+      const duration = Math.max(0, options.duration ?? (type === 'error' ? 8000 : type === 'warning' ? 6000 : 2800));
+      const persistent = options.persistent ?? false;
+      const hasExplicitKey = options.key !== undefined;
+      const key = hasExplicitKey ? options.key : Symbol();
+
+      // Deduplicate identical active (type, message) toasts by refreshing timer
+      // instead of stacking duplicate DOM banners.
+      const existing = hasExplicitKey
+        ? records.get(key)
+        : Array.from(records.values()).find(r => r.type === type && r.message === message && r.detailsText === detailsText);
+      if (existing && existing.type === type && existing.message === message && existing.detailsText === detailsText) {
+        stop(existing);
+        existing.persistent = persistent;
+        existing.remaining = duration;
+        start(existing);
+        return existing.node;
+      }
+      if (hasExplicitKey && records.has(key)) dismiss(key);
 
       const node = document.createElement('div');
       node.className = 'toast' + (type ? ' ' + type : '');
@@ -59,7 +77,6 @@
       // Announce only the message, keeping action buttons out of the live region.
       messageNode.setAttribute('role', type === 'error' ? 'alert' : 'status');
       messageNode.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-      const detailsText = options.details || (message.length > 220 || message.split('\n').length > 3 ? message : '');
       messageNode.textContent = detailsText === message ? message.split('\n')[0].slice(0, 180) + (message.length > 180 ? '…' : '') : message;
       content.appendChild(messageNode);
       if (detailsText) {
@@ -72,15 +89,16 @@
         details.append(summary, pre); content.appendChild(details);
       }
       const record = {
-        key, node, persistent: options.persistent ?? false,
-        remaining: Math.max(0, options.duration ?? (type === 'error' ? 8000 : type === 'warning' ? 6000 : 2800)),
+        key, type, message, detailsText, node, persistent,
+        remaining: duration,
         started: 0, timer: null, hovered: false, focused: false,
         previousFocus: document.activeElement,
       };
       if (type === 'error' || detailsText) {
         const copy = button(text('copy'), 'toast-copy', async () => {
           try {
-            await navigator.clipboard.writeText(detailsText && detailsText !== message ? message + '\n\n' + detailsText : message);
+            const payload = detailsText && detailsText !== message ? message + '\n\n' + detailsText : message;
+            await window.copyToClipboard(payload);
             copy.textContent = text('copied');
           } catch (_) { copy.textContent = text('copyFailed'); }
         });

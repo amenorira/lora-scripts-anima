@@ -7,7 +7,7 @@ window.environmentModelsMixin = {
     // 手动删除的文件被误报为"失败"（bug 3）。silent（任务收尾）时保留，供失败行标红。
     if (!silent && !this.animaModelBusy) { this.animaModelProgress = null; this.animaModelAggregate = null; }
     try {
-      const r = await fetch('/api/anima-model/status');
+      const r = await fetch(window.animaUrl('/api/anima-model/status'));
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const data = await r.json();
       this.animaModelStatus = data.files || null;
@@ -33,7 +33,7 @@ window.environmentModelsMixin = {
     this.startProgress(); this.renderEnvironment();
     try {
       const body = JSON.stringify({file: file || null, group: group || null});
-      const r = await fetch('/api/anima-model/download', {
+      const r = await fetch(window.animaUrl('/api/anima-model/download'), {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body
       });
       const result = await r.json();

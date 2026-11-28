@@ -58,7 +58,8 @@ window.trainingFilePicker = {
     this._pickerLoading = true;
     this._pickerError = '';
     try {
-      const r = await fetch('/api/get_files?pick_type='+pickType);
+      const url = '/api/get_files?pick_type=' + encodeURIComponent(pickType);
+      const r = await fetch(window.animaUrl(url));
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
       if (requestSeq !== this._pickerRequestSeq || !this.showFilePickerModalFlag) return;

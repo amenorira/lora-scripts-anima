@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>lora-scripts-anima</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="/anima-ui/assets/favicon-32.png">
-  <link rel="icon" type="image/png" sizes="64x64" href="/anima-ui/assets/favicon-64.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/anima-ui/assets/favicon-180.png">
-  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="anima-ui/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="anima-ui/assets/favicon-64.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="anima-ui/assets/favicon-180.png">
+  <link rel="icon" type="image/png" href="favicon.png">
   <!-- Blocking script: set theme BEFORE any rendering to avoid flash -->
   <script>
     (function(){
@@ -29,108 +29,109 @@
       }
     })();
   </script>
-  <link rel="preload" href="/anima-ui/assets/fonts/inter-latin-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/anima-ui/js/vendor/alpine.min.js" as="script">
-  <link rel="stylesheet" href="/anima-ui/css/fonts.css">
-  <link rel="stylesheet" href="/anima-ui/css/app.css">
-  <link rel="stylesheet" href="/anima-ui/css/themes/light.css">
-  <link rel="stylesheet" href="/anima-ui/css/themes/dark.css">
-  <link rel="stylesheet" href="/anima-ui/css/themes/comfy.css">
-  <link rel="stylesheet" href="/anima-ui/css/tool-workspace.css">
-  <link rel="stylesheet" href="/anima-ui/css/image-tools.css">
-  <link rel="stylesheet" href="/anima-ui/css/motion.css">
-  <link rel="stylesheet" href="/anima-ui/css/tag-dictionary.css">
-  <script src="/anima-ui/js/shared/i18n.js" defer></script>
-  <script src="/anima-ui/js/shared/constants.js" defer></script>
-  <script src="/anima-ui/js/shared/mixin-compose.js" defer></script>
-  <script src="/anima-ui/js/shared/utils.js" defer></script>
-  <script src="/anima-ui/js/shared/tool-workspace.js" defer></script>
-  <script src="/anima-ui/js/shared/image-loading.js" defer></script>
-  <script src="/anima-ui/js/shared/image-viewport.js" defer></script>
-  <script src="/anima-ui/js/shared/ui-interactions.js" defer></script>
-  <script src="/anima-ui/js/shared/loop-marquee.js" defer></script>
-  <link rel="stylesheet" href="/anima-ui/css/loop-marquee.css">
-  <script src="/anima-ui/js/shared/confirmation-dialog.js" defer></script>
-  <script src="/anima-ui/js/shared/preview-chart.js" defer></script>
-  <script src="/anima-ui/js/shared/notifications.js" defer></script>
+  <link rel="preload" href="anima-ui/assets/fonts/inter-latin-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="anima-ui/js/vendor/alpine.min.js" as="script">
+  <link rel="stylesheet" href="anima-ui/css/fonts.css">
+  <link rel="stylesheet" href="anima-ui/css/app.css">
+  <link rel="stylesheet" href="anima-ui/css/themes/light.css">
+  <link rel="stylesheet" href="anima-ui/css/themes/dark.css">
+  <link rel="stylesheet" href="anima-ui/css/themes/comfy.css">
+  <link rel="stylesheet" href="anima-ui/css/tool-workspace.css">
+  <link rel="stylesheet" href="anima-ui/css/image-tools.css">
+  <link rel="stylesheet" href="anima-ui/css/motion.css">
+  <link rel="stylesheet" href="anima-ui/css/tag-dictionary.css">
+  <script src="anima-ui/js/shared/net.js" defer></script>
+  <script src="anima-ui/js/shared/i18n.js" defer></script>
+  <script src="anima-ui/js/shared/constants.js" defer></script>
+  <script src="anima-ui/js/shared/mixin-compose.js" defer></script>
+  <script src="anima-ui/js/shared/utils.js" defer></script>
+  <script src="anima-ui/js/shared/tool-workspace.js" defer></script>
+  <script src="anima-ui/js/shared/image-loading.js" defer></script>
+  <script src="anima-ui/js/shared/image-viewport.js" defer></script>
+  <script src="anima-ui/js/shared/ui-interactions.js" defer></script>
+  <script src="anima-ui/js/shared/loop-marquee.js" defer></script>
+  <link rel="stylesheet" href="anima-ui/css/loop-marquee.css">
+  <script src="anima-ui/js/shared/confirmation-dialog.js" defer></script>
+  <script src="anima-ui/js/shared/preview-chart.js" defer></script>
+  <script src="anima-ui/js/shared/notifications.js" defer></script>
   <!-- Feature modules (order matters: config first, app last) -->
-  <script src="/anima-ui/js/app/config.js" defer></script>
-  <script src="/anima-ui/js/shared/anima-select.js" defer></script>
-  <script src="/anima-ui/js/shared/realtime.js" defer></script>
-  <script src="/anima-ui/js/monitor/logs.js" defer></script>
-  <script src="/anima-ui/js/monitor/previews.js" defer></script>
-  <script src="/anima-ui/js/monitor/sample-layout.js" defer></script>
-  <script src="/anima-ui/js/monitor/outputs.js" defer></script>
-  <script src="/anima-ui/js/monitor/history.js" defer></script>
-  <script src="/anima-ui/js/monitor/metrics.js" defer></script>
-  <script src="/anima-ui/js/monitor/dataset-diagnostics.js" defer></script>
-  <script src="/anima-ui/js/monitor/core.js" defer></script>
-  <script src="/anima-ui/js/monitor/history-render.js" defer></script>
-  <script src="/anima-ui/js/monitor/artifacts-render.js" defer></script>
-  <script src="/anima-ui/js/monitor/resource-bar.js" defer></script>
-  <script src="/anima-ui/js/monitor/diagnostics.js" defer></script>
-  <script src="/anima-ui/js/monitor/summary.js" defer></script>
-  <script src="/anima-ui/js/monitor/dataset-diagnostics-format.js" defer></script>
-  <script src="/anima-ui/js/monitor/dataset-diagnostics-scatter.js" defer></script>
-  <script src="/anima-ui/js/monitor/dataset-diagnostics-timestep.js" defer></script>
-  <script src="/anima-ui/js/monitor/dataset-diagnostics-modal.js" defer></script>
-  <script src="/anima-ui/js/monitor/dataset-diagnostics-render.js" defer></script>
-  <script src="/anima-ui/js/monitor/render.js" defer></script>
-  <script src="/anima-ui/js/environment/tasks.js" defer></script>
-  <script src="/anima-ui/js/environment/components.js" defer></script>
-  <script src="/anima-ui/js/environment/models.js" defer></script>
-  <script src="/anima-ui/js/environment/loading.js" defer></script>
-  <script src="/anima-ui/js/environment/core.js" defer></script>
-  <script src="/anima-ui/js/environment/models-render.js" defer></script>
-  <script src="/anima-ui/js/environment/components-render.js" defer></script>
-  <script src="/anima-ui/js/environment/dictionary-render.js" defer></script>
-  <script src="/anima-ui/js/environment/render.js" defer></script>
-  <script src="/anima-ui/js/docs/index.js" defer></script>
-  <script src="/anima-ui/js/training/timestep-model.js" defer></script>
-  <script src="/anima-ui/js/training/field-relations.js" defer></script>
-  <script src="/anima-ui/js/training/file-picker.js" defer></script>
-  <script src="/anima-ui/js/training/preflight.js" defer></script>
-  <script src="/anima-ui/js/training/profiles.js" defer></script>
-  <script src="/anima-ui/js/training/validation.js" defer></script>
-  <script src="/anima-ui/js/training/sections.js" defer></script>
-  <script src="/anima-ui/js/training/conditions.js" defer></script>
-  <script src="/anima-ui/js/training/timestep-preview.js" defer></script>
-  <script src="/anima-ui/js/training/field-renderer.js" defer></script>
-  <script src="/anima-ui/js/training/preview-loras.js" defer></script>
-  <script src="/anima-ui/js/training/network-panel.js" defer></script>
-  <script src="/anima-ui/js/training/core.js" defer></script>
-  <script src="/anima-ui/js/training/dataset-repeat.js" defer></script>
-  <script src="/anima-ui/js/training/lr-preview.js" defer></script>
-  <script src="/anima-ui/js/training/shape-preview.js" defer></script>
-  <script src="/anima-ui/js/training/crop-preview-grid.js" defer></script>
-  <script src="/anima-ui/js/training/crop-preview.js" defer></script>
-  <link rel="stylesheet" href="/anima-ui/css/crop-preview.css">
-  <script src="/anima-ui/js/training/prompt-workbench.js" defer></script>
-  <script src="/anima-ui/js/training/prompt-tag-tools.js" defer></script>
-  <script src="/anima-ui/js/training/prompt-triggers.js" defer></script>
-  <link rel="stylesheet" href="/anima-ui/css/prompt-workbench.css">
-  <script src="/anima-ui/js/training/toml.js" defer></script>
-  <script src="/anima-ui/js/training/run-control.js" defer></script>
-  <script src="/anima-ui/js/training/config-io.js" defer></script>
-  <script src="/anima-ui/js/tagger/ai-caption-options.js" defer></script>
-  <script src="/anima-ui/js/tagger/caption-workspace.js" defer></script>
-  <script src="/anima-ui/js/tagger/sources.js" defer></script>
-  <script src="/anima-ui/js/tagger/tasks.js" defer></script>
-  <script src="/anima-ui/js/tagger/index.js" defer></script>
-  <script src="/anima-ui/js/regularization/index.js" defer></script>
-  <script src="/anima-ui/js/tag-editor/session.js" defer></script>
-  <script src="/anima-ui/js/tag-editor/edits.js" defer></script>
-  <script src="/anima-ui/js/tag-editor/persistence.js" defer></script>
-  <script src="/anima-ui/js/tag-editor/view.js" defer></script>
-  <script src="/anima-ui/js/tag-editor/actions.js" defer></script>
-  <script src="/anima-ui/js/tag-editor/filters.js" defer></script>
-  <script src="/anima-ui/js/tag-editor/index.js" defer></script>
+  <script src="anima-ui/js/app/config.js" defer></script>
+  <script src="anima-ui/js/shared/anima-select.js" defer></script>
+  <script src="anima-ui/js/shared/realtime.js" defer></script>
+  <script src="anima-ui/js/monitor/logs.js" defer></script>
+  <script src="anima-ui/js/monitor/previews.js" defer></script>
+  <script src="anima-ui/js/monitor/sample-layout.js" defer></script>
+  <script src="anima-ui/js/monitor/outputs.js" defer></script>
+  <script src="anima-ui/js/monitor/history.js" defer></script>
+  <script src="anima-ui/js/monitor/metrics.js" defer></script>
+  <script src="anima-ui/js/monitor/dataset-diagnostics.js" defer></script>
+  <script src="anima-ui/js/monitor/core.js" defer></script>
+  <script src="anima-ui/js/monitor/history-render.js" defer></script>
+  <script src="anima-ui/js/monitor/artifacts-render.js" defer></script>
+  <script src="anima-ui/js/monitor/resource-bar.js" defer></script>
+  <script src="anima-ui/js/monitor/diagnostics.js" defer></script>
+  <script src="anima-ui/js/monitor/summary.js" defer></script>
+  <script src="anima-ui/js/monitor/dataset-diagnostics-format.js" defer></script>
+  <script src="anima-ui/js/monitor/dataset-diagnostics-scatter.js" defer></script>
+  <script src="anima-ui/js/monitor/dataset-diagnostics-timestep.js" defer></script>
+  <script src="anima-ui/js/monitor/dataset-diagnostics-modal.js" defer></script>
+  <script src="anima-ui/js/monitor/dataset-diagnostics-render.js" defer></script>
+  <script src="anima-ui/js/monitor/render.js" defer></script>
+  <script src="anima-ui/js/environment/tasks.js" defer></script>
+  <script src="anima-ui/js/environment/components.js" defer></script>
+  <script src="anima-ui/js/environment/models.js" defer></script>
+  <script src="anima-ui/js/environment/loading.js" defer></script>
+  <script src="anima-ui/js/environment/core.js" defer></script>
+  <script src="anima-ui/js/environment/models-render.js" defer></script>
+  <script src="anima-ui/js/environment/components-render.js" defer></script>
+  <script src="anima-ui/js/environment/dictionary-render.js" defer></script>
+  <script src="anima-ui/js/environment/render.js" defer></script>
+  <script src="anima-ui/js/docs/index.js" defer></script>
+  <script src="anima-ui/js/training/timestep-model.js" defer></script>
+  <script src="anima-ui/js/training/field-relations.js" defer></script>
+  <script src="anima-ui/js/training/file-picker.js" defer></script>
+  <script src="anima-ui/js/training/preflight.js" defer></script>
+  <script src="anima-ui/js/training/profiles.js" defer></script>
+  <script src="anima-ui/js/training/validation.js" defer></script>
+  <script src="anima-ui/js/training/sections.js" defer></script>
+  <script src="anima-ui/js/training/conditions.js" defer></script>
+  <script src="anima-ui/js/training/timestep-preview.js" defer></script>
+  <script src="anima-ui/js/training/field-renderer.js" defer></script>
+  <script src="anima-ui/js/training/preview-loras.js" defer></script>
+  <script src="anima-ui/js/training/network-panel.js" defer></script>
+  <script src="anima-ui/js/training/core.js" defer></script>
+  <script src="anima-ui/js/training/dataset-repeat.js" defer></script>
+  <script src="anima-ui/js/training/lr-preview.js" defer></script>
+  <script src="anima-ui/js/training/shape-preview.js" defer></script>
+  <script src="anima-ui/js/training/crop-preview-grid.js" defer></script>
+  <script src="anima-ui/js/training/crop-preview.js" defer></script>
+  <link rel="stylesheet" href="anima-ui/css/crop-preview.css">
+  <script src="anima-ui/js/training/prompt-workbench.js" defer></script>
+  <script src="anima-ui/js/training/prompt-tag-tools.js" defer></script>
+  <script src="anima-ui/js/training/prompt-triggers.js" defer></script>
+  <link rel="stylesheet" href="anima-ui/css/prompt-workbench.css">
+  <script src="anima-ui/js/training/toml.js" defer></script>
+  <script src="anima-ui/js/training/run-control.js" defer></script>
+  <script src="anima-ui/js/training/config-io.js" defer></script>
+  <script src="anima-ui/js/tagger/ai-caption-options.js" defer></script>
+  <script src="anima-ui/js/tagger/caption-workspace.js" defer></script>
+  <script src="anima-ui/js/tagger/sources.js" defer></script>
+  <script src="anima-ui/js/tagger/tasks.js" defer></script>
+  <script src="anima-ui/js/tagger/index.js" defer></script>
+  <script src="anima-ui/js/regularization/index.js" defer></script>
+  <script src="anima-ui/js/tag-editor/session.js" defer></script>
+  <script src="anima-ui/js/tag-editor/edits.js" defer></script>
+  <script src="anima-ui/js/tag-editor/persistence.js" defer></script>
+  <script src="anima-ui/js/tag-editor/view.js" defer></script>
+  <script src="anima-ui/js/tag-editor/actions.js" defer></script>
+  <script src="anima-ui/js/tag-editor/filters.js" defer></script>
+  <script src="anima-ui/js/tag-editor/index.js" defer></script>
   <!-- Tag Editor 词典：lib 定义纯逻辑，client 持有 Worker 与缓存，hover 只挂事件委托 -->
-  <script src="/anima-ui/js/tag-dictionary/lib.js" defer></script>
-  <script src="/anima-ui/js/tag-dictionary/index.js" defer></script>
-  <script src="/anima-ui/js/tag-dictionary/hover-card.js" defer></script>
-  <script src="/anima-ui/js/app/index.js" defer></script>
-  <script src="/anima-ui/js/app/bootstrap.js" defer></script>
+  <script src="anima-ui/js/tag-dictionary/lib.js" defer></script>
+  <script src="anima-ui/js/tag-dictionary/index.js" defer></script>
+  <script src="anima-ui/js/tag-dictionary/hover-card.js" defer></script>
+  <script src="anima-ui/js/app/index.js" defer></script>
+  <script src="anima-ui/js/app/bootstrap.js" defer></script>
 </head>
 <body x-data="animaApp()" :data-gpu-workload="trainingActive || isTraining || trainingStarting || regularizationActive ? '' : null" x-cloak>
 

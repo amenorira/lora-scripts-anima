@@ -364,7 +364,14 @@ window.tagEditorMixin = {
 
   // ===== Download dataset =====
   tagEditorDownloadZip() {
-    window.open('/api/tageditor/download-zip?dir=' + encodeURIComponent(this.tagEditorDir), '_blank');
+    window.triggerSafeDownload('/api/tageditor/download-zip?dir=' + encodeURIComponent(this.tagEditorDir), {
+      frameId: 'tag-editor-zip-download-frame',
+      onError: result => {
+        this.toast(this.localizeApiError?.(result, 'common.requestFailed') || result?.message || this.t('common.requestFailed'), 'error', {
+          details: this.apiErrorDetails?.(result) || '',
+        });
+      },
+    });
   },
 
   // ===== Restore from .bak backup =====

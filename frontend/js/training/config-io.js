@@ -6,7 +6,7 @@ window.trainingConfigIoMixin = {
   async downloadConfig() {
     try {
       if (!await this.ensureKreaDitFormat()) return;
-      const response = await fetch('/api/training/export-config', {
+      const response = await fetch(window.animaUrl('/api/training/export-config'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -145,7 +145,7 @@ window.trainingConfigIoMixin = {
       if (!sourceIsCurrent()) return;
       let importForm = form, importProfile = modelTrainType;
       try {
-        const r = await fetch('/api/training/parse-config', {
+        const r = await fetch(window.animaUrl('/api/training/parse-config'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: e.target.result, model_train_type: modelTrainType })

@@ -1772,7 +1772,9 @@ window.monitorSummaryMixin = {
   },
 
   async copyMonitorParamValue(value) {
-    try { await navigator.clipboard.writeText(value); this.toast(this.t('common.copied')); }
-    catch { this.toast(this.t('common.requestFailed'), 'error'); }
+    try {
+      await window.copyToClipboard(value);
+      this.toast(this.t('common.copied'));
+    } catch { this.toast(this.t('common.requestFailed'), 'error'); }
   },
 };

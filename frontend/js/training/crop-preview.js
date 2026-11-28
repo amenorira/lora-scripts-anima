@@ -99,7 +99,7 @@ window.trainingCropPreviewMixin = {
       const payload = { ...this._trainingDatasetPayload(), random_crop, cache_latents, cache_latents_to_disk };
       this.cropPreviewRegConfigured = payload.model_train_type !== 'krea2-lora'
         && (payload.enable_reg_data ?? true) && !!String(payload.reg_data_dir ?? '').trim();
-      const response = await fetch('/api/training/crop-preview', {
+      const response = await fetch(window.animaUrl('/api/training/crop-preview'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
         body: JSON.stringify(payload),
       });

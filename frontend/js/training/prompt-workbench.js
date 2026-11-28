@@ -261,7 +261,7 @@ window.trainingPromptWorkbenchMixin = {
     this.promptWorkbenchLoading = true;
     this.promptWorkbenchError = '';
     try {
-      const response = await fetch('/api/training/prompt-tags', {
+      const response = await fetch(window.animaUrl('/api/training/prompt-tags'), {
         method:'POST', headers:{'Content-Type':'application/json'}, signal:this._promptWorkbenchAbort.signal,
         body:JSON.stringify(this._trainingDatasetPayload()),
       });

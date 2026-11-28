@@ -41,8 +41,7 @@ window.realtimeMixin = {
   },
 
   _realtimeUrl() {
-    const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return scheme + '//' + window.location.host + '/ws/realtime';
+    return window.animaWsUrl('/ws/realtime');
   },
 
   _connectRealtimeNow() {
@@ -310,7 +309,7 @@ window.realtimeMixin = {
     const timeout = setTimeout(() => controller.abort(), 4000);
     let snapshot;
     try {
-      const response = await fetch('/api/realtime/snapshot', { cache: 'no-store', signal: controller.signal });
+      const response = await fetch(window.animaUrl('/api/realtime/snapshot'), { cache: 'no-store', signal: controller.signal });
       if (!response.ok) return false;
       const body = await response.json();
       if (body.status !== 'success' || !body.data) return false;
@@ -418,7 +417,7 @@ window.realtimeMixin = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1000);
     try {
-      const response = await fetch('/api/health', { cache: 'no-store', signal: controller.signal });
+      const response = await fetch(window.animaUrl('/api/health'), { cache: 'no-store', signal: controller.signal });
       return response.ok;
     } catch (_) {
       return false;

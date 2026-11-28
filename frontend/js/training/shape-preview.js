@@ -74,7 +74,7 @@ window.trainingShapePreviewMixin = {
       controller.abort();
     }, 15000);
     try {
-      const response = await fetch('/api/training/shape-preview', {
+      const response = await fetch(window.animaUrl('/api/training/shape-preview'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: signature,
         signal: controller.signal,
       });

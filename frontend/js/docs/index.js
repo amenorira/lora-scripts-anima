@@ -74,7 +74,8 @@ window.docsMixin = {
       this.docsError = '';
 
       try {
-        const response = await fetch('/api/docs?locale=' + encodeURIComponent(locale));
+        const docsUrl = '/api/docs?locale=' + encodeURIComponent(locale);
+        const response = await fetch(window.animaUrl(docsUrl));
         if (!response.ok) throw new Error('HTTP ' + response.status);
         const result = await response.json();
         if (result.status !== 'success' || !result.data) {
@@ -112,8 +113,9 @@ window.docsMixin = {
   },
 
   async _fetchDocsContent(slug, locale, signal) {
+    const docUrl = '/api/docs/' + encodeURIComponent(slug) + '?locale=' + encodeURIComponent(locale);
     const response = await fetch(
-      '/api/docs/' + encodeURIComponent(slug) + '?locale=' + encodeURIComponent(locale),
+      window.animaUrl(docUrl),
       { signal },
     );
     if (!response.ok) throw new Error('HTTP ' + response.status);

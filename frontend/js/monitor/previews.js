@@ -1005,7 +1005,7 @@ window.monitorPreviewsMixin = {
       } else if (this.taskId) {
         url += '&task_id=' + encodeURIComponent(this.taskId);
       }
-      const r = await fetch(url);
+      const r = await fetch(window.animaUrl(url));
       const j = await r.json();
       if (!isCurrent()) return;
       if (j.status === 'success') {

@@ -3037,8 +3037,10 @@ window.monitorArtifactsRenderMixin = {
     const thumbLimit = tier > 320 ? 288 : tier === 320 ? 352 : 320;
     if (thumb && required <= thumbLimit) return thumb;
     const previewLimit = tier > 960 ? 864 : tier === 960 ? 1056 : 960;
-    if (thumb?.startsWith('/api/image-preview?') && required <= previewLimit) {
-      const url = new URL(thumb, window.location.href);
+    const previewPrefix = window.animaUrl('/api/image-preview?');
+    if (thumb && (thumb.startsWith(previewPrefix) || thumb.startsWith('/api/image-preview?')) && required <= previewLimit) {
+      const resolvedThumb = window.animaUrl(thumb);
+      const url = new URL(resolvedThumb, window.location.href);
       url.searchParams.set('variant', 'preview'); url.searchParams.delete('size');
       return url.pathname + url.search;
     }

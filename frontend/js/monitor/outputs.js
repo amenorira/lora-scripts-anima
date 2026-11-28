@@ -61,7 +61,8 @@ window.monitorOutputsMixin = {
     this.outputFilesLoading = true;
     this.renderDashboard();
     try {
-      const r = await fetch('/api/monitor/outputs?run_dir=' + encodeURIComponent(runDir));
+      const outputsUrl = '/api/monitor/outputs?run_dir=' + encodeURIComponent(runDir);
+      const r = await fetch(window.animaUrl(outputsUrl));
       const j = await r.json();
       if (requestSeq !== this._outputFilesRequestSeq || runDir !== this.currentOutputRunDir) return;
       this._outputFilesLoaded = true;
@@ -237,14 +238,17 @@ window.monitorOutputsMixin = {
     this.renderDashboard();
   },
 
-  // 用隐藏 <a download> 触发下载，避免 window.open 被拦截 / 返回 JSON 错误页
-  _triggerDownload(url) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { if (a.parentNode) a.remove(); }, 1000);
+  // 用隐藏 iframe 触发下载：附件直接走浏览器下载，错误响应则捕获 JSON 提示用户
+  _triggerDownload(url, options = {}) {
+    window.triggerSafeDownload(url, {
+      frameId: options.frameId || 'anima-output-download-frame',
+      isCurrent: options.isCurrent,
+      onError: options.onError || (result => {
+        this.toast(this.localizeApiError(result, 'common.requestFailed'), 'error', {
+          details: this.apiErrorDetails(result),
+        });
+      }),
+    });
   },
 
   async downloadSelectedOutputs() {
@@ -274,7 +278,8 @@ window.monitorOutputsMixin = {
     if (!this.outputCanReveal || !runDir || !path) return;
     try {
       const query = new URLSearchParams({run_dir: runDir, path});
-      const response = await fetch('/api/monitor/outputs/reveal?' + query, {method: 'POST'});
+      const revealUrl = '/api/monitor/outputs/reveal?' + query;
+      const response = await fetch(window.animaUrl(revealUrl), {method: 'POST'});
       const result = await response.json();
       if (!response.ok || result.status !== 'success') this.toast(this.localizeApiError(result, 'errors.monitorRevealFailed'), 'error');
     } catch {

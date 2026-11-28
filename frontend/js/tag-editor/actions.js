@@ -187,7 +187,7 @@ window.tagEditorActions = {
 
   async _teCopyMenuTags(text, singleTag) {
     try {
-      await navigator.clipboard.writeText(text || '');
+      await window.copyToClipboard(text || '');
       this.toast(singleTag
         ? this.t('tagEditor.singleTagCopied').replace('{tag}', text)
         : this.t('tagEditor.tagsCopied').replace('{n}', _teParseTags(text || '').length));

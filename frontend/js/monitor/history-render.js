@@ -117,7 +117,8 @@ window.monitorHistoryRenderMixin = {
   },
 
   async _fetchConfigSnapshot(runDir, signal) {
-    const response = await fetch('/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir), { signal });
+    const url = '/api/monitor/config-from-run?run_dir=' + encodeURIComponent(runDir);
+    const response = await fetch(window.animaUrl(url), { signal });
     if (response.ok === false) throw new Error(this.t('monitor.configLoadError'));
     return response.json();
   },
@@ -578,7 +579,9 @@ window.monitorHistoryRenderMixin = {
 
   copyConfigContent() {
     if (this._currentSnapshot && this._currentSnapshot.content) {
-      navigator.clipboard.writeText(this._currentSnapshot.content).then(() => this.toast(this.t('common.copied'))).catch(() => this.toast(this.t('common.requestFailed'), 'error'));
+      window.copyToClipboard(this._currentSnapshot.content)
+        .then(() => this.toast(this.t('common.copied')))
+        .catch(() => this.toast(this.t('common.requestFailed'), 'error'));
     }
   },
 

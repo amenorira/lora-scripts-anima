@@ -7,6 +7,21 @@ from starlette.datastructures import Headers
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from backend.constants import get_root_path
+
+def get_route_path(scope: Scope) -> str:
+    """Return the app-relative path after stripping ASGI root_path (or configured ANIMA_ROOT_PATH)."""
+    path = scope.get("path", "") or ""
+    root_path = (scope.get("root_path") or "").rstrip("/")
+    if not root_path:
+        root_path = get_root_path()
+    if root_path and path.startswith(root_path):
+        rest = path[len(root_path):]
+        if not rest or rest.startswith("/"):
+            return rest or "/"
+    return path
+
+
 
 class BasicAuthMiddleware:
     def __init__(self, app: ASGIApp, digest: str) -> None:

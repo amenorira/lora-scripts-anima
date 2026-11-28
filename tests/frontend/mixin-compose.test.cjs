@@ -15,7 +15,7 @@ test('the production script order assembles the complete application without col
     Alpine:{data(name,create){if(name==='animaApp')factory=create;}},
     fetch:async()=>({ok:true,json:async()=>({status:'error'})}),setTimeout,clearTimeout,setInterval,clearInterval,
   };
-  const files = [...readRepo('frontend/index.html').matchAll(/<script src="\/anima-ui\/js\/([^\"]+)"/g)]
+  const files = [...readRepo('frontend/index.html').matchAll(/<script src="(?:\/)?anima-ui\/js\/([^\"]+)"/g)]
     .map(match=>match[1]).filter(file=>!file.startsWith('vendor/'));
   vm.createContext(context);
   for (const file of files) vm.runInContext(readFrontend(file),context,{filename:file});

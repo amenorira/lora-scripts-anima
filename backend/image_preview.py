@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
-from backend.constants import CACHE_DIR
+from backend.constants import CACHE_DIR, with_root_path
 
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".avif", ".jxl",
@@ -86,7 +86,7 @@ def build_image_preview_url(
         params["size"] = str(size)
     if version:
         params["v"] = version
-    return "/api/image-preview?" + urllib.parse.urlencode(params)
+    return with_root_path("/api/image-preview?" + urllib.parse.urlencode(params))
 
 
 def preview_etag(source: Path, variant: str, size: int | None = None, *, orient: bool = True) -> str:

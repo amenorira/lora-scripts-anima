@@ -3,7 +3,8 @@
 (() => {
   Promise.resolve(window.I18N.ready).then(() => {
     const script = document.createElement('script');
-    script.src = '/anima-ui/js/vendor/alpine.min.js';
+    const alpineUrl = '/anima-ui/js/vendor/alpine.min.js';
+    script.src = window.animaUrl(alpineUrl);
     document.head.appendChild(script);
   });
 })();

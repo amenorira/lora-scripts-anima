@@ -224,8 +224,9 @@ window.monitorCoreMixin = {
     let timeout, snapshot;
     try {
       const controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 4000);
-      const url = '/api/realtime/state?hardware=' + !this.realtimeReady + (this.liveTaskId ? '&task_id=' + encodeURIComponent(this.liveTaskId) : '');
+      timeout = setTimeout(() => controller.abort(), 12000);
+      const rawUrl = '/api/realtime/state?hardware=' + !this.realtimeReady + (this.liveTaskId ? '&task_id=' + encodeURIComponent(this.liveTaskId) : '');
+      const url = window.animaUrl(rawUrl);
       const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
       if (!response.ok) throw new Error('state request failed');
       const body = await response.json();
@@ -671,8 +672,9 @@ window.monitorCoreMixin = {
       && this.liveTaskBoundaryAt === boundary && this.currentOutputRunDir === runDir
       && (historical || this.realtimeInstanceId === instanceId);
     request.promise = (async () => {
-      const url = historical ? '/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir)
+      const rawUrl = historical ? '/api/monitor/run-detail?run_dir=' + encodeURIComponent(runDir)
         : '/api/realtime/monitor-detail';
+      const url = window.animaUrl(rawUrl);
       const timeout = historical ? null : setTimeout(() => request.controller.abort(), 10000);
       let body;
       try {

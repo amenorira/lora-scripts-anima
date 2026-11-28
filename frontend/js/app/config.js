@@ -7,7 +7,7 @@
 let trainingFieldsRequest;
 window.loadTrainingFields = function() {
   if (window.TRAIN_SECTIONS) return Promise.resolve(window.TRAIN_SECTIONS);
-  trainingFieldsRequest ||= fetch('/api/fields').then(async response => {
+  trainingFieldsRequest ||= fetch(window.animaUrl('/api/fields')).then(async response => {
     const body = await response.json();
     if (!response.ok || body.status !== 'success' || !body.data?.sections?.length) {
       throw new Error('Training fields unavailable');

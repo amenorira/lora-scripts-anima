@@ -257,7 +257,8 @@ window.trainingControlMixin = {
     this.controlExternalEncoder = false;
     this.controlSeed = this.controlSteps = this.controlWidth = this.controlHeight = this.controlScale = this.controlPrompt = '';
     try {
-      const res = await fetch('/api/monitor/control/' + encodeURIComponent(id) + '?prompts=' + (action === 'sample'));
+      const ctrlUrl = '/api/monitor/control/' + encodeURIComponent(id) + '?prompts=' + (action === 'sample');
+      const res = await fetch(window.animaUrl(ctrlUrl));
       if (!res.ok) throw new Error(this.t('control.unavailable'));
       const state = await res.json();
       if (seq !== this.controlRequest || this.liveTaskId !== id || !this.controlDialog) return;
@@ -299,7 +300,8 @@ window.trainingControlMixin = {
     this.controlSubmitting = true;
     if (action === 'force') this.trainingStopping = id;
     try {
-      const res = await fetch('/api/monitor/control/' + encodeURIComponent(id), {
+      const ctrlPostUrl = '/api/monitor/control/' + encodeURIComponent(id);
+      const res = await fetch(window.animaUrl(ctrlPostUrl), {
           method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
         });
       const data = await res.json();

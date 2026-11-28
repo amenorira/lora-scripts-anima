@@ -8,10 +8,14 @@ import subprocess
 import sys
 import tempfile
 
-from backend.constants import CACHE_DIR, LOGS_DIR, OUTPUT_DIR, REPO_ROOT
+from backend.constants import CACHE_DIR, LOGS_DIR, OUTPUT_DIR, REPO_ROOT, get_root_path
 
 PREFIX = "/tensorboard"
 ROOT = REPO_ROOT
+
+
+def _path_prefix() -> str:
+    return f"{get_root_path()}{PREFIX}"
 
 
 class TensorBoardService:
@@ -49,6 +53,7 @@ class TensorBoardService:
             os.unlink(endpoint_name)
             endpoint = Path(endpoint_name)
             self._endpoint = endpoint
+            tb_prefix = _path_prefix()
             # The child inherits its own handle; the parent need not retain it.
             with log_path.open("ab", buffering=0) as output:
                 self.process = subprocess.Popen(
@@ -69,7 +74,7 @@ class TensorBoardService:
                             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
                         )
                     try:
-                        response = await self.client.get(PREFIX + "/data/environment", timeout=2)
+                        response = await self.client.get(tb_prefix + "/data/environment", timeout=2)
                         response.raise_for_status()
                         response.json()
                         self._cleanup_endpoint()
@@ -147,10 +152,11 @@ def _serve():
     import threading
 
     endpoint, port, logdir = sys.argv[1:]
+    tb_prefix = _path_prefix()
     board = program.TensorBoard(plugins=[*default.get_plugins(), TimestepPlugin],
-                               assets_zip_provider=chart_assets_provider(PREFIX))
+                               assets_zip_provider=chart_assets_provider(tb_prefix))
     board.configure(argv=["tensorboard", "--host", "127.0.0.1", "--port", port,
-                          "--logdir", logdir, "--path_prefix", PREFIX])
+                          "--logdir", logdir, "--path_prefix", tb_prefix])
     url = board.launch()
     # Atomic publication: the parent never observes a partial URL.
     pending = Path(endpoint + ".tmp")

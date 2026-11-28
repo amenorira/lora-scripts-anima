@@ -23,7 +23,8 @@ const I18N = (() => {
     if (_cache[locale]) return Promise.resolve(_cache[locale]);
     if (_pending.has(locale)) return _pending.get(locale);
     const request = (async () => {
-      const response = await fetch('/anima-ui/i18n/' + locale + '.json');
+      const url = '/anima-ui/i18n/' + locale + '.json';
+      const response = await fetch(window.animaUrl(url));
       if (!response.ok) throw new Error('HTTP ' + response.status);
       const messages = await response.json();
       _cache[locale] = messages;

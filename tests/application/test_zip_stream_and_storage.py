@@ -94,6 +94,31 @@ class StorageConstantsAndRootPathTests(unittest.TestCase):
             self.assertEqual(roots_override["hf_cache_dir"], anima_hf_dir)
             self.assertEqual(os.environ["HF_HOME"], str(anima_hf_dir))
 
+    def test_root_path_helpers_and_url_builders(self):
+        from pathlib import PurePosixPath
+        from backend.image_preview import build_image_preview_url
+        from backend.server.routes.docs import _asset_url
+        from backend import tensorboard_service
+
+        os.environ.pop("ANIMA_ROOT_PATH", None)
+        self.assertEqual(constants.get_root_path(), "")
+        self.assertEqual(constants.with_root_path("/api/health"), "/api/health")
+        self.assertEqual(tensorboard_service._path_prefix(), "/tensorboard")
+
+        os.environ["ANIMA_ROOT_PATH"] = "proxy/12333/"
+        self.assertEqual(constants.get_root_path(), "/proxy/12333")
+        self.assertEqual(constants.with_root_path("/api/health"), "/proxy/12333/api/health")
+        # Idempotent and ignores external URLs
+        self.assertEqual(constants.with_root_path("/proxy/12333/api/health"), "/proxy/12333/api/health")
+        self.assertEqual(constants.with_root_path("https://example.com/a"), "https://example.com/a")
+
+        preview_url = build_image_preview_url(scope="artifact", run_dir="output/r1", path="sample/a.png", variant="thumb")
+        self.assertTrue(preview_url.startswith("/proxy/12333/api/image-preview?"))
+        doc_asset = _asset_url("img/diagram.png", PurePosixPath("parameters"))
+        self.assertEqual(doc_asset, "/proxy/12333/api/docs/assets/parameters/img/diagram.png")
+        self.assertEqual(tensorboard_service._path_prefix(), "/proxy/12333/tensorboard")
+
+
 class FuseSafetyAndOptimizationTests(unittest.TestCase):
     def tearDown(self):
         file_io.clear_fs_cache()

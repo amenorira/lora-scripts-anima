@@ -220,7 +220,7 @@ window.captionWorkspaceMixin = {
   },
   async syncCaptionPreviewState(isCurrent = () => true) {
     try {
-      const body = await (await fetch('/api/tagger/caption/preview-state')).json();
+      const body = await (await fetch(window.animaUrl('/api/tagger/caption/preview-state'))).json();
       if (!isCurrent() || body.status !== 'success') return;
       this.captionExternalTaggerBusy = !!body.data.tagger_busy;
       clearTimeout(this._captionBusyTimer);
@@ -239,7 +239,7 @@ window.captionWorkspaceMixin = {
     // Poll for server confirmation before clearing the active preview.
     while (id === this.captionPreviewRequestId && this.captionPreviewBusy) {
       try {
-        const body = await (await fetch('/api/tagger/caption/preview-state')).json();
+        const body = await (await fetch(window.animaUrl('/api/tagger/caption/preview-state'))).json();
         if (body.status === 'success' && (!body.data.active || body.data.request_id !== id)) {
           this.captionPreviewStatus = 'idle';
           this.captionExternalTaggerBusy = !!body.data.tagger_busy;
@@ -267,7 +267,7 @@ window.captionWorkspaceMixin = {
     this.captionPreviewError = '';
     this.saveCaptionOptions();
     try {
-      const body = await (await fetch('/api/tagger/caption/preview', {method:'POST',headers:{'Content-Type':'application/json'},
+      const body = await (await fetch(window.animaUrl('/api/tagger/caption/preview'), {method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({source_token:source,index:0,request_id:id,api,captioning:options})})).json();
       if (isCurrent() && !this.captionPreviewCancelling) {
         if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
@@ -288,7 +288,7 @@ window.captionWorkspaceMixin = {
     // Retry until acknowledged or the original request has actually settled.
     while (id === this.captionPreviewRequestId && this.captionPreviewBusy) {
       try {
-        const body = await (await fetch('/api/tagger/caption/preview-cancel', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:id})})).json();
+        const body = await (await fetch(window.animaUrl('/api/tagger/caption/preview-cancel'), {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:id})})).json();
         if (body.data?.cancelling) return;
       } catch (_) {}
       await new Promise(resolve => setTimeout(resolve, 250));
@@ -309,7 +309,8 @@ window.captionWorkspaceMixin = {
     this.captionPlanLoading = true;
     this.captionPlanError = '';
     try {
-      const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(token)}/caption-plan`, {method:'POST',headers:{'Content-Type':'application/json'},
+      const planUrl = `/api/tagger/source/${encodeURIComponent(token)}/caption-plan`;
+      const body = await (await fetch(window.animaUrl(planUrl), {method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(options)})).json();
       if (request !== this._captionPlanRequest || token !== this.captionBatchState().source?.source_token) return null;
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
@@ -336,7 +337,8 @@ window.captionWorkspaceMixin = {
     if (!options.silent) this.captionOverviewLoading = true;
     this.captionOverviewError = '';
     try {
-      const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(token)}/annotations?${this.captionAnnotationParams(options)}`)).json();
+      const annUrl = `/api/tagger/source/${encodeURIComponent(token)}/annotations?${this.captionAnnotationParams(options)}`;
+      const body = await (await fetch(window.animaUrl(annUrl))).json();
       if (request !== this._captionOverviewRequest || token !== this.captionBatchState().source?.source_token) return null;
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       const data = body.data;
@@ -513,7 +515,8 @@ window.captionWorkspaceMixin = {
     this.captionDetailLoading = true;
     this.captionDetailError = '';
     try {
-      const body = await (await fetch(`/api/tagger/source/${encodeURIComponent(source.source_token)}/annotations/${item.index}?${this.captionOutputParams(this.captionOverviewSettings || this.captionOptions)}`)).json();
+      const detailUrl = `/api/tagger/source/${encodeURIComponent(source.source_token)}/annotations/${item.index}?${this.captionOutputParams(this.captionOverviewSettings || this.captionOptions)}`;
+      const body = await (await fetch(window.animaUrl(detailUrl))).json();
       if (request !== this._captionDetailRequest) return;
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       this.captionOverviewDetail = body.data;
@@ -559,8 +562,9 @@ window.captionWorkspaceMixin = {
     const source = this.captionBatchState().source;
     if (!source) return '';
     const item = this.captionOverviewItems.find(item => item.index === index) || this.captionOverviewDetail;
-    return '/api/image-preview?' + new URLSearchParams({scope:'tagger',source_token:source.source_token,index:String(index),variant,
+    const url = '/api/image-preview?' + new URLSearchParams({scope:'tagger',source_token:source.source_token,index:String(index),variant,
       identity:item?.path || '',version:item?.image_version || ''});
+    return window.animaUrl(url);
   },
   async showCaptionCheckPrompt() {
     const batch = this.captionBatchState();
@@ -574,7 +578,8 @@ window.captionWorkspaceMixin = {
         && current.taskId === batch.taskId && current.source?.source_token === token && current.sourcePath === batch.sourcePath;
     };
     try {
-      const body = await (await fetch(`/api/tagger/tasks/${encodeURIComponent(batch.taskId)}/check-prompt`)).json();
+      const promptUrl = `/api/tagger/tasks/${encodeURIComponent(batch.taskId)}/check-prompt`;
+      const body = await (await fetch(window.animaUrl(promptUrl))).json();
       if (!isCurrent()) return;
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'common.requestFailed') || body.message || this.t('common.requestFailed'));
       this.captionCheckPrompt = body.data.prompt;
@@ -616,7 +621,10 @@ window.captionCandidateViewer = read => ({
     });
   },
   async captionViewerCopy() {
-    try { await navigator.clipboard.writeText(this.captionViewerText()); this.toast(this.t('tagger.copied')); }
-    catch (_) { this.toast(this.t('common.failed'),'error'); }
+    try {
+      const text = this.captionViewerText();
+      await window.copyToClipboard(text);
+      this.toast(this.t('tagger.copied'));
+    } catch (_) { this.toast(this.t('common.failed'),'error'); }
   },
 });

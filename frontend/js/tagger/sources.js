@@ -190,7 +190,7 @@ window.taggerSourcesMixin = {
     try {
       const data = new FormData();
       data.append('file', file, file.name);
-      const response = await fetch('/api/tagger/uploads', { method: 'POST', body: data });
+      const response = await fetch(window.animaUrl('/api/tagger/uploads'), { method: 'POST', body: data });
       const body = await response.json();
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body, 'tagger.uploadFailed') || body.message || this.t('tagger.uploadFailed'));
       if (version !== this._taggerSourceScanVersion || mode !== this.taggerSourceMode || route !== this.currentRoute) return;
@@ -220,7 +220,7 @@ window.taggerSourcesMixin = {
     if (mode === 'api-folder') this.captionSourceError = '';
     try {
       const recursive = this.taggerModeIsApi() ? this.captionOptions.recursive !== false : this.taggerSettings.recursive;
-      const response = await fetch('/api/tagger/source/scan', {
+      const response = await fetch(window.animaUrl('/api/tagger/source/scan'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path, recursive, caption_extension: this.taggerModeIsApi() ? this.captionOptions.caption_extension : '.txt', caption_options: this.taggerModeIsApi() ? this.captionOptions : undefined }),
       });

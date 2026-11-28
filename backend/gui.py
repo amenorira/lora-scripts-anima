@@ -29,7 +29,7 @@ if not (sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32):
     )
     raise SystemExit(1)
 
-# Ensure the --data-dir CLI flag takes effect in os.environ BEFORE
+# Ensure --data-dir / --root-path CLI flags take effect in os.environ BEFORE
 # importing backend.log / backend.constants / backend.server.application.
 def _preapply_cli_env(argv: list[str]) -> None:
     i = 0
@@ -45,6 +45,22 @@ def _preapply_cli_env(argv: list[str]) -> None:
             val = arg.split("=", 1)[1].strip()
             if val:
                 os.environ["ANIMA_DATA_DIR"] = os.path.abspath(os.path.expanduser(val))
+            i += 1
+            continue
+        if arg == "--root-path" and i + 1 < len(argv):
+            val = argv[i + 1].strip().rstrip("/")
+            if val:
+                os.environ["ANIMA_ROOT_PATH"] = val if val.startswith("/") else "/" + val
+            else:
+                os.environ.pop("ANIMA_ROOT_PATH", None)
+            i += 2
+            continue
+        if arg.startswith("--root-path="):
+            val = arg.split("=", 1)[1].strip().rstrip("/")
+            if val:
+                os.environ["ANIMA_ROOT_PATH"] = val if val.startswith("/") else "/" + val
+            else:
+                os.environ.pop("ANIMA_ROOT_PATH", None)
             i += 1
             continue
         i += 1
@@ -70,6 +86,55 @@ from backend.launch_utils import (
 )
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        log.warning("Invalid integer for %s; using default %s / %s 数值无效，使用默认值 %s", name, default, name, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw.strip())
+    except ValueError:
+        log.warning("Invalid number for %s; using default %s / %s 数值无效，使用默认值 %s", name, default, name, default)
+        return default
+
+
+def normalize_root_path(value: str | None) -> str:
+    """Normalize ASGI root_path: strip trailing '/', ensure leading '/' if non-empty."""
+    if not value:
+        return ""
+    cleaned = value.strip().rstrip("/")
+    if not cleaned:
+        return ""
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    return cleaned
+
+
+class _ExplicitPortAction(argparse.Action):
+    """Record that --port was explicitly passed on the CLI."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        setattr(namespace, "_port_explicit", True)
+
+
 def _auth_digest(value: str) -> str:
     username, _, password = value.partition(":")
     if not username or not password:
@@ -82,13 +147,21 @@ def _auth_digest(value: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="LoRA training GUI (Anima suite)")
+    parser.set_defaults(_port_explicit=False)
     parser.add_argument("--host", type=str, default="127.0.0.1", help="Web UI listen host")
-    parser.add_argument("--port", type=int, default=12333, help="Web UI listen port")
+    parser.add_argument("--port", type=int, default=12333, action=_ExplicitPortAction,
+                        help="Web UI listen port (explicitly specifying --port enables strict port mode)")
+    parser.add_argument("--strict-port", action="store_true",
+                        help="Fail immediately if the requested port is occupied instead of falling back")
     parser.add_argument("--listen", action="store_true", help="Listen on 0.0.0.0 (LAN access)")
     parser.add_argument("--auth", type=_auth_digest, dest="auth_digest", metavar="USERNAME:PASSWORD",
                         help="Require HTTP Basic authentication for the training UI")
     parser.add_argument("--data-dir", type=str, default=None, metavar="DIR",
                         help="External base directory for models, output, config, and logs (env: ANIMA_DATA_DIR)")
+    parser.add_argument("--root-path", type=str, default=None, metavar="PREFIX",
+                        help="Reverse proxy mount path prefix, e.g. /proxy/12333 (env: ANIMA_ROOT_PATH)")
+    parser.add_argument("--forwarded-allow-ips", type=str, default=None, metavar="IPS",
+                        help="Trusted proxy IPs for X-Forwarded-* headers (default: 127.0.0.1; env: ANIMA_FORWARDED_ALLOW_IPS)")
     parser.add_argument("--skip-prepare-environment", action="store_true",
                         help="Skip dependency check/repair at startup")
     parser.add_argument("--skip-prepare-onnxruntime", action="store_true",
@@ -121,7 +194,8 @@ def _report_optional_accelerators() -> None:
 
 
 def launch(args: argparse.Namespace) -> None:
-    # Apply the storage configuration before loading application services.
+    # Resolve storage, proxy, and auth env vars BEFORE importing backend.constants
+    # or backend.server.application, and scrub plaintext ANIMA_AUTH before any subprocess runs.
     raw_data_dir = getattr(args, "data_dir", None)
     if raw_data_dir is None:
         raw_data_dir = os.environ.get("ANIMA_DATA_DIR")
@@ -129,6 +203,15 @@ def launch(args: argparse.Namespace) -> None:
         os.environ["ANIMA_DATA_DIR"] = os.path.abspath(os.path.expanduser(raw_data_dir.strip()))
     elif getattr(args, "data_dir", None) == "":
         os.environ.pop("ANIMA_DATA_DIR", None)
+
+    raw_root_path = getattr(args, "root_path", None)
+    if raw_root_path is None:
+        raw_root_path = os.environ.get("ANIMA_ROOT_PATH", "")
+    root_path = normalize_root_path(raw_root_path)
+    if root_path:
+        os.environ["ANIMA_ROOT_PATH"] = root_path
+    else:
+        os.environ.pop("ANIMA_ROOT_PATH", None)
 
     if "backend.constants" in sys.modules:
         sys.modules["backend.constants"].refresh_storage_paths()
@@ -148,8 +231,20 @@ def launch(args: argparse.Namespace) -> None:
         # --skip-prepare-onnxruntime 单独跳过 onnxruntime 修复（其余依赖检查照常）
         prepare_environment(prepare_onnxruntime=not args.skip_prepare_onnxruntime)
 
+    strict_port = bool(
+        getattr(args, "strict_port", False)
+        or getattr(args, "_port_explicit", False)
+        or _env_bool("ANIMA_STRICT_PORT")
+    )
     requested_port = args.port
     if not check_port_available(requested_port):
+        if strict_port:
+            log.error(
+                "Port %s is already in use; aborting because strict port mode is enabled. / "
+                "端口 %s 已被占用，已启用严格端口模式，中止启动。",
+                requested_port, requested_port,
+            )
+            sys.exit(1)
         fallback = find_available_ports(30000, 30000 + 20)
         if fallback is None:
             log.error("port finding fallback error / 端口查找失败，无可用端口")
@@ -169,6 +264,11 @@ def launch(args: argparse.Namespace) -> None:
     if args.tensorboard_host is not None:
         log.warning("--tensorboard-host is deprecated and ignored / 此参数已弃用，"
                     "TensorBoard 仅监听回环地址，请通过主端口 /tensorboard/ 访问")
+
+    raw_forwarded = getattr(args, "forwarded_allow_ips", None)
+    if raw_forwarded is None:
+        raw_forwarded = os.environ.get("ANIMA_FORWARDED_ALLOW_IPS", "127.0.0.1")
+    forwarded_allow_ips = raw_forwarded.strip() or "127.0.0.1"
 
     os.environ["ANIMA_HOST"] = args.host
     if args.auth_digest is None:
@@ -190,8 +290,19 @@ def launch(args: argparse.Namespace) -> None:
     if args.dev:
         # Reload mode owns a separate worker console lifecycle.
         finish_step()
-    uvicorn.run("backend.server:app", host=args.host, port=args.port,
-                log_level="error", reload=args.dev)
+    uvicorn.run(
+        "backend.server:app",
+        host=args.host,
+        port=args.port,
+        root_path=root_path,
+        proxy_headers=True,
+        forwarded_allow_ips=forwarded_allow_ips,
+        ws_ping_interval=_env_float("ANIMA_WS_PING_INTERVAL", 25.0),
+        ws_ping_timeout=_env_float("ANIMA_WS_PING_TIMEOUT", 60.0),
+        timeout_keep_alive=_env_int("ANIMA_TIMEOUT_KEEP_ALIVE", 65),
+        log_level="error",
+        reload=args.dev,
+    )
 
 
 def main() -> None:

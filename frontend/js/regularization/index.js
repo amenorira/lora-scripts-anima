@@ -140,7 +140,8 @@ window.regularizationMixin = {
   regRunSelectConfig() { return { options: this.regRuns.map(run => ({v: run.run_key, l: run.run_key + ' · ' + run.completed + '/' + run.total})) }; },
   regFilterSelectConfig() { return { options: ['all','completed','failed','excluded','pending'].map(key => ({v:key,l:this.regT(key)})) }; },
   async regRequest(path, body) {
-    const response = await fetch('/api/regularization' + path, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const url = '/api/regularization' + path;
+    const response = await fetch(window.animaUrl(url), body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const result = await response.json();
     if (result.status === 'changed') {
       this.regPlan = result.data; this.regPlanDirty = false; this.regPreviewDirty = false; this.regPlanConsumed = false; this.regSources = [];
@@ -481,8 +482,10 @@ window.regularizationMixin = {
     };
   },
   async regCopyLogs() {
-    try { await navigator.clipboard.writeText(this.regLogs.join('\n')); this.toast(this.t('common.copied')); }
-    catch (_) { this.toast(this.t('common.failed'), 'error'); }
+    try {
+      await window.copyToClipboard(this.regLogs.join('\n'));
+      this.toast(this.t('common.copied'));
+    } catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
   async regGenerate() {
     if (this.regBusy || this.regRunning || this.trainingActive) return;
@@ -778,11 +781,16 @@ window.regularizationMixin = {
       this.regChanged(); this.regPlanDirty = false; this.regPreviewDirty = false; this.regShowSettings(); this.toast(this.regT('settingsLoaded'));
     });
   },
-  regImage(item, variant = 'thumb') { return '/api/regularization/runs/' + encodeURIComponent(this.regRunKey) + '/preview/' + item.index + '?variant=' + variant; },
+  regImage(item, variant = 'thumb') {
+    const url = '/api/regularization/runs/' + encodeURIComponent(this.regRunKey) + '/preview/' + item.index + '?variant=' + variant;
+    return window.animaUrl(url);
+  },
   async regCopyOutputPath() {
     if (!this.regTask?.output_path) return;
-    try { await navigator.clipboard.writeText(this.regTask.output_path); this.toast(this.t('common.copied')); }
-    catch (_) { this.toast(this.t('common.failed'), 'error'); }
+    try {
+      await window.copyToClipboard(this.regTask.output_path);
+      this.toast(this.t('common.copied'));
+    } catch (_) { this.toast(this.t('common.failed'), 'error'); }
   },
   regCanNavigateImage(direction) {
     if (!this.regSelected) return false;
@@ -808,7 +816,10 @@ window.regularizationMixin = {
       }
     });
   },
-  regSourceImage(index) { return '/api/regularization/plans/' + this.regPlan?.token + '/preview/' + index + '?variant=thumb'; },
+  regSourceImage(index) {
+    const url = '/api/regularization/plans/' + this.regPlan?.token + '/preview/' + index + '?variant=thumb';
+    return window.animaUrl(url);
+  },
   async regMutate(item, action) {
     if (this.trainingActive || this.regRunning || this.regBusy || this.showConfirmModal) return;
     const key = this.regRunKey, selected = this.regSelected;

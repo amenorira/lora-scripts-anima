@@ -365,7 +365,7 @@ window.tagDictionaryMixin = {
     var self = this;
     var state = _td();
     if (state.statusRequest) return state.statusRequest;
-    state.statusRequest = fetch(TD_STATUS_URL, { signal: AbortSignal.timeout(10000) })
+    state.statusRequest = fetch(window.animaUrl(TD_STATUS_URL), { signal: AbortSignal.timeout(10000) })
       .then(function (response) { return response.ok ? response.json() : null; })
       .then(function (payload) {
         if (!payload || payload.status !== 'success') throw new Error('dictionary status unavailable');
@@ -392,7 +392,8 @@ window.tagDictionaryMixin = {
     this.tagDictionaryCheckingUpdate = true;
     this._tdRefreshPanelRow();
     var self = this;
-    return fetch(TD_STATUS_URL + '/update?force=' + (!!force), { cache: 'no-store', signal: AbortSignal.timeout(45000) })
+    var updateUrl = TD_STATUS_URL + '/update?force=' + (!!force);
+    return fetch(window.animaUrl(updateUrl), { cache: 'no-store', signal: AbortSignal.timeout(45000) })
       .then(function (response) { if (!response.ok) throw new Error('check failed'); return response.json(); })
       .then(function (payload) {
         if (generation === self._tagDictionaryCheckGeneration && self.tagDictionaryServer) self.tagDictionaryServer.update = payload.data;
@@ -417,7 +418,7 @@ window.tagDictionaryMixin = {
     this.tagDictionaryCheckingUpdate = false;
     if (typeof this._envSetCardOpen === 'function') this._envSetCardOpen('dictionary', true);
     this._tdRefreshPanelRow();
-    fetch(TD_INSTALL_URL, {
+    fetch(window.animaUrl(TD_INSTALL_URL), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ force: !!force }),
@@ -520,7 +521,8 @@ window.tagDictionaryMixin = {
     state.status = 'loading';
     var self = this;
     try {
-      state.worker = new Worker('/anima-ui/js/tag-dictionary/worker.js');
+      var workerUrl = '/anima-ui/js/tag-dictionary/worker.js';
+      state.worker = new Worker(window.animaUrl(workerUrl));
     } catch (e) {
       this.tagDictionaryFailed = true;
       state.status = 'failed';
@@ -536,7 +538,7 @@ window.tagDictionaryMixin = {
     state.startupTimer = setTimeout(function () {
       if (state.worker === worker && state.status === 'loading') _tdFail(self, 'core', 'Load timed out');
     }, 30000);
-    state.worker.postMessage({ type: 'INIT', base: TD_BASE });
+    state.worker.postMessage({ type: 'INIT', base: window.animaUrl(TD_BASE) });
     if (window.tagHoverCard) window.tagHoverCard.attach(this);
   },
 

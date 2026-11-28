@@ -1,5 +1,6 @@
 """Same-origin TensorBoard gateway. The upstream owns the path prefix."""
 from html import escape
+import os
 
 import httpx
 from fastapi import APIRouter, Request
@@ -15,6 +16,24 @@ _HOP_BY_HOP = frozenset({
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailer", "trailers", "transfer-encoding", "upgrade",
 })
+
+
+def _normalize_root_path(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = value.strip().rstrip("/")
+    if not cleaned:
+        return ""
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    return cleaned
+
+
+def _request_root_path(request: Request) -> str:
+    return _normalize_root_path(
+        request.scope.get("root_path") or os.environ.get("ANIMA_ROOT_PATH", "")
+    )
+
 
 def _headers(headers):
     excluded = _HOP_BY_HOP | {
@@ -32,7 +51,8 @@ def _unavailable(request, state, detail=""):
     }
     message = messages[state]
     headers = {"Cache-Control": "no-store"}
-    if request.url.path == PREFIX + "/":
+    req_path = request.scope.get("path") or request.url.path
+    if req_path == PREFIX + "/":
         refresh = '<meta http-equiv="refresh" content="2">' if state == "starting" else ""
         return HTMLResponse(
             '<!doctype html><html lang="zh-CN"><meta charset="utf-8">' + refresh +
@@ -49,7 +69,15 @@ async def _forward(request: Request):
     state = service.status()
     if state != "ready":
         return _unavailable(request, state, service.error)
-    target = httpx.URL(path=request.url.path, query=request.url.query.encode("utf-8"))
+    root = _request_root_path(request)
+    rel_path = request.scope.get("path") or request.url.path
+    # TensorBoard is started with --path_prefix={root}{PREFIX}; forward the
+    # matching prefixed path when behind a subpath proxy.
+    if root and rel_path != root and not rel_path.startswith(root + "/"):
+        upstream_path = root + rel_path
+    else:
+        upstream_path = rel_path
+    target = httpx.URL(path=upstream_path, query=request.url.query.encode("utf-8"))
     headers = [(k, v) for k, v in _headers(request.headers) if k.lower() != b"host"]
     client = service.client
     upstream_request = client.build_request(
@@ -71,15 +99,20 @@ async def _forward(request: Request):
         background=BackgroundTask(upstream.aclose),
     )
     response.raw_headers = _headers(upstream.headers)
-    # TB may produce absolute redirects. Keep browser navigation on the public origin.
+    # TB may produce absolute redirects. Keep browser navigation on the public origin
+    # and preserve any subpath proxy prefix (root_path / ANIMA_ROOT_PATH).
     location = upstream.headers.get("location")
     if location:
         url = httpx.URL(location)
         internal = url.host == client.base_url.host and url.port == client.base_url.port
         if internal or (not url.host and location.startswith("/")):
             path = url.raw_path.decode("ascii")
-            if url.path != PREFIX and not url.path.startswith(PREFIX + "/"):
-                path = PREFIX + path
+            tb_prefix = root + PREFIX
+            if url.path != tb_prefix and not url.path.startswith(tb_prefix + "/"):
+                if url.path == PREFIX or url.path.startswith(PREFIX + "/"):
+                    path = root + path
+                else:
+                    path = tb_prefix + path
             response.headers["location"] = path + ("#" + url.fragment if url.fragment else "")
     return response
 
@@ -87,7 +120,8 @@ async def _forward(request: Request):
 async def _legacy_redirect(request: Request):
     path = request.path_params.get("path", "")
     query = "?" + request.url.query if request.url.query else ""
-    return RedirectResponse(PREFIX + "/" + path + query, status_code=307)
+    root = _request_root_path(request)
+    return RedirectResponse(root + PREFIX + "/" + path + query, status_code=307)
 
 
 router.add_route(PREFIX + "/{path:path}", _forward, ["GET", "HEAD", "POST"])

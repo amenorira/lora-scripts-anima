@@ -288,7 +288,8 @@
         else if (this._datasetDiagQueryKey === request.key && this._datasetDiagPayloadRevision) {
           params.set('known_revision', this._datasetDiagPayloadRevision);
         }
-        const resp = await fetch('/api/monitor/dataset-diagnostics?' + params.toString(), {
+        const diagUrl = '/api/monitor/dataset-diagnostics?' + params.toString();
+        const resp = await fetch(window.animaUrl(diagUrl), {
           cache: 'no-store', signal: request.controller.signal,
         });
         const body = await resp.json();
@@ -1573,7 +1574,8 @@
           if (source.taskId) params.set('task_id', source.taskId);
           const runId = this.datasetDiagRunId || this.datasetDiagData?.run_id || '';
           if (runId) params.set('run_id', runId);
-          fetch('/api/monitor/dataset-diagnostics/image?' + params.toString(), {
+          const imgUrl = '/api/monitor/dataset-diagnostics/image?' + params.toString();
+          fetch(window.animaUrl(imgUrl), {
             cache: 'no-store',
             ...(controller ? { signal: controller.signal } : {}),
           })
@@ -1640,7 +1642,8 @@
         const runId = this.datasetDiagRunId || this.datasetDiagData?.run_id || '';
         if (runId) params.set('run_id', runId);
         if (refreshLocal) params.set('refresh_local', 'true');
-        const resp = await fetch('/api/monitor/dataset-diagnostics/image?' + params.toString(), {
+        const detailUrl = '/api/monitor/dataset-diagnostics/image?' + params.toString();
+        const resp = await fetch(window.animaUrl(detailUrl), {
           cache: 'no-store', signal: controller.signal,
         });
         const body = await resp.json();
@@ -1725,7 +1728,8 @@
           if (source.taskId) params.set('task_id', source.taskId);
           const runId = this.datasetDiagRunId || this.datasetDiagData?.run_id || '';
           if (runId) params.set('run_id', runId);
-          const resp = await fetch('/api/monitor/dataset-diagnostics/image?' + params.toString(), {
+          const previewImgUrl = '/api/monitor/dataset-diagnostics/image?' + params.toString();
+          const resp = await fetch(window.animaUrl(previewImgUrl), {
             cache: 'no-store',
             ...(controller ? { signal: controller.signal } : {}),
           });

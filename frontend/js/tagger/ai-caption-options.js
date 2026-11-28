@@ -99,7 +99,7 @@ window.captionOptionsMixin = {
   async loadCaptionTemplate() {
     if (this.captionDefaultPrompt) return;
     try {
-      const body = await (await fetch('/api/tagger/api/caption-template')).json();
+      const body = await (await fetch(window.animaUrl('/api/tagger/api/caption-template'))).json();
       if (body.status === 'success') this.captionDefaultPrompt = body.data?.prompt || '';
     } catch (_) {}
   },
@@ -314,7 +314,7 @@ window.captionOptionsMixin = {
     this.taggerApiTesting = true;
     try {
       const s = this.taggerApiSettings;
-      const body = await (await fetch('/api/tagger/api/test', {method:'POST', headers:{'Content-Type':'application/json'}, signal:controller.signal, body:JSON.stringify({base_url:s.baseUrl,api_key:s.apiKey,protocol:s.protocol})})).json();
+      const body = await (await fetch(window.animaUrl('/api/tagger/api/test'), {method:'POST', headers:{'Content-Type':'application/json'}, signal:controller.signal, body:JSON.stringify({base_url:s.baseUrl,api_key:s.apiKey,protocol:s.protocol})})).json();
       if (!stillCurrent()) return;
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       this.taggerApiModelSuggestions = body.data?.models || [];
@@ -363,7 +363,7 @@ window.captionOptionsMixin = {
       }
       const payload = {engine:'api',source_token:token,
         api,options:{captioning:{...options,candidates,dry_run:dryRun}}};
-      const body = await (await fetch('/api/tagger/tasks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
+      const body = await (await fetch(window.animaUrl('/api/tagger/tasks'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})).json();
       if (body.status !== 'success') throw new Error(this.localizeApiError?.(body) || body.message);
       this._clearTaggerResultState(mode);
       this.attachTaggerTask(body.data.task_id, mode);

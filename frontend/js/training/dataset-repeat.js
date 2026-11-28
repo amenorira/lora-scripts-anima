@@ -268,7 +268,7 @@ window.datasetRepeatMixin = {
     let response;
     let result;
     try {
-      response = await fetch('/api/training/dataset-repeat', {
+      response = await fetch(window.animaUrl('/api/training/dataset-repeat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir, changes }),

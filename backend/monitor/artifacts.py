@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from backend.constants import REPO_ROOT
+from backend.constants import with_root_path
 from backend.image_preview import build_image_preview_url
 
 from backend.monitor.checkpoints import LORA_EXTENSIONS, parse_checkpoint
@@ -150,7 +150,9 @@ def newest_previews(
             "url": build_image_preview_url(scope="artifact", run_dir=run_dir, path=rel, variant="original", version=version),
             "inspect_url": build_image_preview_url(scope="artifact", run_dir=run_dir, path=rel, variant="inspect", version=version),
             "thumb_url": build_image_preview_url(scope="artifact", run_dir=run_dir, path=rel, variant="thumb", size=320, version=version),
-            "metadata_url": f"/api/monitor/preview-metadata?run_dir={quote(run_dir, safe='')}&path={quote(rel, safe='/')}&v={version}",
+            "metadata_url": with_root_path(
+                f"/api/monitor/preview-metadata?run_dir={quote(run_dir, safe='')}&path={quote(rel, safe='/')}&v={version}"
+            ),
             "size": stat.st_size,
             "version": version,
         })

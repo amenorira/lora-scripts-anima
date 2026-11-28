@@ -49,7 +49,8 @@ window.environmentLoadingMixin = {
   _environmentJsonLoader(url, apply, fail, transform) {
     return {
       load: async () => {
-        const response = await fetch(url);
+        const resolvedUrl = window.animaUrl(url);
+        const response = await fetch(resolvedUrl);
         const payload = await response.json();
         if (!response.ok) throw new Error(this.t('environment.loadResourceFailed').replace('{url}', () => url));
         return transform ? transform(payload) : payload;
@@ -171,12 +172,12 @@ window.environmentLoadingMixin = {
       this.mossAccelRefresh(true),
       this.animaModelRefresh(true).catch(() => {}),
       (async () => {
-        try { const r = await fetch('/api/sd-scripts/status'); if (!r.ok) throw new Error('HTTP ' + r.status); this.sdStatus = await r.json(); this.sdError = null; }
+        try { const r = await fetch(window.animaUrl('/api/sd-scripts/status')); if (!r.ok) throw new Error('HTTP ' + r.status); this.sdStatus = await r.json(); this.sdError = null; }
         catch (e) { this.sdStatus = null; this.sdError = String(e); }
       })(),
       (async () => {
         try {
-          const r = await fetch('/api/training/cores');
+          const r = await fetch(window.animaUrl('/api/training/cores'));
           const payload = await r.json();
           if (payload.status === 'success') { this.trainingCores = payload.data || null; this.trainingCoresError = null; }
           else { this.trainingCoresError = payload.message || this.t('environment.coresLoadFailed'); this.trainingCores = null; }

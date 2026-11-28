@@ -28,7 +28,8 @@ window.tagEditorSession = {
   // ===== Data Loading =====
   _teCloseSession(sessionId) {
     if (!sessionId) return;
-    fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId), { method: 'DELETE', keepalive: true }).catch(function() {});
+    var url = '/api/tageditor/sessions/' + encodeURIComponent(sessionId);
+    fetch(window.animaUrl(url), { method: 'DELETE', keepalive: true }).catch(function() {});
   },
 
   _teStartExternalRefresh() {
@@ -75,7 +76,7 @@ window.tagEditorSession = {
     this._teExternalAbort = controller;
     try {
       var url = '/api/tageditor/sessions/' + encodeURIComponent(session) + '/refresh?since_generation=' + this._teExternalGeneration;
-      var response = await fetch(url, { method: 'POST', signal: controller.signal });
+      var response = await fetch(window.animaUrl(url), { method: 'POST', signal: controller.signal });
       var payload = await response.json();
       if (controller.signal.aborted || session !== this.tagEditorSessionId ||
           saveEpoch !== this._teSaveEpoch || !this._teCanRefreshExternally()) return;
@@ -294,7 +295,8 @@ window.tagEditorSession = {
     this._tePageAbort = controller;
     this._teSearchLoading = true;
     try {
-      var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString(), this._teCaptionQueryOptions(controller.signal));
+      var pageUrl = '/api/tageditor/sessions/' + encodeURIComponent(this.tagEditorSessionId) + '/images?' + this._teSessionQuery(targetPage).toString();
+      var response = await fetch(window.animaUrl(pageUrl), this._teCaptionQueryOptions(controller.signal));
       var payload = await response.json();
       if (epoch !== this._tePageEpoch || controller.signal.aborted) return false;
       if (cacheKey !== this._teSessionQueryKey(targetPage)) return false;
@@ -495,7 +497,7 @@ window.tagEditorSession = {
     var preservedDrafts = loadOptions.preserveDrafts || {};
     var retainedPaths = Object.keys(preservedDrafts);
     try {
-      var r = await fetch('/api/tageditor/sessions', {
+      var r = await fetch(window.animaUrl('/api/tageditor/sessions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -709,7 +711,8 @@ window.tagEditorSession = {
     var epoch = this._teLoadEpoch, modeEpoch = this._teModeEpoch, generation = this._teExternalGeneration;
     var isCurrent = () => epoch === this._teLoadEpoch && modeEpoch === this._teModeEpoch && generation === this._teExternalGeneration;
     try {
-      var r = await fetch('/api/tageditor/tags?dir=' + encodeURIComponent(this.tagEditorDir) + '&recursive=' + (this.tagEditorRecursive ? 'true' : 'false'));
+      var tagsUrl = '/api/tageditor/tags?dir=' + encodeURIComponent(this.tagEditorDir) + '&recursive=' + (this.tagEditorRecursive ? 'true' : 'false');
+      var r = await fetch(window.animaUrl(tagsUrl));
       var j = await r.json();
       if (!isCurrent()) return;
       if (j.status === 'success') {
@@ -790,7 +793,8 @@ window.tagEditorSession = {
       for (var page = 1; page <= totalPages; page++) {
         assertCurrent();
         base.set('page', String(page));
-        var response = await fetch('/api/tageditor/sessions/' + encodeURIComponent(sessionId) + '/images?' + base.toString(), requestOptions);
+        var imagesUrl = '/api/tageditor/sessions/' + encodeURIComponent(sessionId) + '/images?' + base.toString();
+        var response = await fetch(window.animaUrl(imagesUrl), requestOptions);
         var payload = await response.json();
         assertCurrent();
         if (payload.status !== 'success') throw new Error(payload.message || this.t('common.error'));

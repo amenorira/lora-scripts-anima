@@ -229,7 +229,8 @@ window.tagEditorView = {
     params.set('session_id', this.tagEditorSessionId);
     params.set('path', img.rel_path || img.name || '');
     params.set('variant', 'original');
-    return '/api/image-preview?' + params.toString();
+    var url = '/api/image-preview?' + params.toString();
+    return window.animaUrl(url);
   },
 
   tagEditorOpenLightbox(img, trigger) {

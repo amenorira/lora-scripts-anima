@@ -14,7 +14,8 @@ window.mountWorkspaceTemplate = (() => {
     if (host.dataset.mounted === '1') return;
     if (!pending.has(host)) {
       const request = (async () => {
-        const response = await fetch(url);
+        const resolvedUrl = window.animaUrl(url);
+        const response = await fetch(resolvedUrl);
         if (!response.ok) throw new Error(errorText);
         host.innerHTML = await response.text();
         if (childrenOnly) for (const child of host.children) Alpine.initTree(child);
@@ -49,6 +50,14 @@ window.utilsMixin = {
     }, 800);
   },
 
+  animaUrl(path) {
+    return window.animaUrl(path);
+  },
+
+  copyToClipboard(text) {
+    return window.copyToClipboard(text);
+  },
+
   nativePickerUrl(type) {
     const params = new URLSearchParams({
       picker_type: type,
@@ -58,7 +67,7 @@ window.utilsMixin = {
       params.set('file_type_label', this.t(`nativePicker.${type}.files`));
       params.set('all_files_label', this.t('nativePicker.allFiles'));
     }
-    return '/api/pick_file?' + params;
+    return this.animaUrl('/api/pick_file?' + params);
   },
 
   // Fixed API failures use stable codes; unknown and third-party errors retain

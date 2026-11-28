@@ -500,7 +500,9 @@ window.trainingTomlMixin = {
   },
 
   copyToml() {
-    navigator.clipboard.writeText(this.tomlRaw).then(() => this.toast(this.t('common.copied')));
+    window.copyToClipboard(this.tomlRaw)
+      .then(() => this.toast(this.t('common.copied')))
+      .catch(() => this.toast(this.t('common.failed'), 'error'));
   },
 
   // Guided fields become native scheduler args in the portable preview.
@@ -570,7 +572,10 @@ window.trainingTomlMixin = {
   },
 
   _showTrainingError(result, fallbackKey = 'common.failed') {
-    this.toast(this._trainingErrorText(result, fallbackKey), 'error', { details: this.apiErrorDetails(result) });
+    this.toast(this._trainingErrorText(result, fallbackKey), 'error', {
+      key: 'training-start-error',
+      details: this.apiErrorDetails(result),
+    });
   },
 
   async prepareKrea2Cache(confirmedPayload = null) {
@@ -586,7 +591,7 @@ window.trainingTomlMixin = {
         }
       }
       const payload = confirmedPayload ?? this._collectTrainingPayload();
-      const response = await fetch('/api/training/krea2/cache', {
+      const response = await fetch(window.animaUrl('/api/training/krea2/cache'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -705,7 +710,7 @@ window.trainingTomlMixin = {
         await this._submitTraining(payload);
       }
     } catch(e) {
-      this.toast(this.t('common.requestFailed')+': '+e.message, 'error');
+      this.toast(this.t('common.requestFailed')+': '+e.message, 'error', { key: 'training-start-error' });
       this._applyTaskView('IDLE');
     } finally {
       this.trainingStarting = false;
@@ -716,7 +721,7 @@ window.trainingTomlMixin = {
   async _submitTraining(payload, confirmInPlace = false) {
     this.isTraining = true; this.isIdle = false;
     this.statusText = this.t('common.training') + '...';
-    const resp = await fetch('/api/run', {
+    const resp = await fetch(window.animaUrl('/api/run'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),

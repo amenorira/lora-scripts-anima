@@ -2,7 +2,7 @@
 window.environmentComponentsMixin = {
   async faRefresh(silent) {
     try {
-      const response = await fetch('/api/flash-attn/status');
+      const response = await fetch(window.animaUrl('/api/flash-attn/status'));
       if (!response.ok) throw new Error(this.t('environment.loadFailed'));
       this.faStatus = await response.json();
       this.faError = null;
@@ -16,7 +16,7 @@ window.environmentComponentsMixin = {
     this.faProgress = { stage: 'resolving' };
     this._envForceOpen('fa'); this.renderEnvironment();
     try {
-      const response = await fetch('/api/flash-attn/install', { method: 'POST' });
+      const response = await fetch(window.animaUrl('/api/flash-attn/install'), { method: 'POST' });
       const result = await response.json();
       if (!response.ok || !result.success || !result.job_id) throw new Error(this.localizeApiError(result, 'environment.installFailed'));
       this.faInstallJobId = result.job_id;
@@ -28,12 +28,12 @@ window.environmentComponentsMixin = {
 
   // ── xformers Methods ────────────────────────────────
   async xfRefresh(silent) { this.xfError = null;
-    try { const r = await fetch('/api/xformers/status'); if (!r.ok) throw new Error('HTTP ' + r.status); this.xfStatus = await r.json(); } catch (e) { this.xfError = String(e); this.xfStatus = null; }
+    try { const r = await fetch(window.animaUrl('/api/xformers/status')); if (!r.ok) throw new Error('HTTP ' + r.status); this.xfStatus = await r.json(); } catch (e) { this.xfError = String(e); this.xfStatus = null; }
     if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
 
   async xfInstall() { this.xfBusy = true; this.xfError = null; this.xfInstallLog = ''; this.xfInstallElapsed = 0; this._envForceOpen('xf'); this.startProgress(); this.renderEnvironment();
-    try { const r = await fetch('/api/xformers/install',{method:'POST'}); const result = await r.json();
+    try { const r = await fetch(window.animaUrl('/api/xformers/install'),{method:'POST'}); const result = await r.json();
       if (result.success && result.job_id) { this.xfInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('xf', result.job_id); }
       else { this.xfBusy = false; this.xfError = result.error||this.t('environment.installFailed'); this.finishProgress(); this.renderEnvironment(); }
     } catch (e) { this.xfBusy = false; this.xfError = String(e); this.finishProgress(); this.renderEnvironment(); }
@@ -42,14 +42,14 @@ window.environmentComponentsMixin = {
   // ── Triton Methods ──────────────────────────────────
   async tritonRefresh(silent) {
     this.tritonError = null;
-    try { const r = await fetch('/api/triton/status'); if (!r.ok) throw new Error('HTTP ' + r.status); this.tritonStatus = await r.json(); } catch (e) { this.tritonError = String(e); this.tritonStatus = null; }
+    try { const r = await fetch(window.animaUrl('/api/triton/status')); if (!r.ok) throw new Error('HTTP ' + r.status); this.tritonStatus = await r.json(); } catch (e) { this.tritonError = String(e); this.tritonStatus = null; }
     if (silent) this.scheduleEnvironmentRender(); else { this.renderEnvironment(); this.finishProgress(); }
   },
 
   async tritonInstall() {
     this.tritonBusy = true; this.tritonError = null; this.tritonInstallLog = ''; this.tritonInstallElapsed = 0; this._envForceOpen('triton'); this.startProgress(); this.renderEnvironment();
     try {
-      const r = await fetch('/api/triton/install', { method: 'POST' });
+      const r = await fetch(window.animaUrl('/api/triton/install'), { method: 'POST' });
       const result = await r.json();
       if (result.success && result.job_id) { this.tritonInstallJobId = result.job_id; this._setEnvironmentRealtimeTask('triton', result.job_id); }
       else { this.tritonBusy = false; this.tritonError = result.error || result.message || this.t('environment.installFailed'); this.toast(this.tritonError, 'error'); this.finishProgress(); this.renderEnvironment(); }
@@ -59,7 +59,7 @@ window.environmentComponentsMixin = {
   async mossAccelRefresh(silent) {
     this.mossAccelError = null;
     try {
-      const response = await fetch('/api/moss-acceleration/status');
+      const response = await fetch(window.animaUrl('/api/moss-acceleration/status'));
       if (!response.ok) throw new Error('HTTP ' + response.status);
       this.mossAccelStatus = await response.json();
     } catch (error) { this.mossAccelStatus = null; this.mossAccelError = String(error); }
@@ -71,7 +71,7 @@ window.environmentComponentsMixin = {
     this.mossAccelInstallLog = ''; this.mossAccelInstallElapsed = 0;
     this._envForceOpen('mossAccel'); this.startProgress(); this.renderEnvironment();
     try {
-      const response = await fetch('/api/moss-acceleration/install', { method: 'POST' });
+      const response = await fetch(window.animaUrl('/api/moss-acceleration/install'), { method: 'POST' });
       const result = await response.json();
       if (!response.ok || !result.success || !result.job_id) throw new Error(this.localizeApiError(result, 'environment.installFailed'));
       this.mossAccelInstallJobId = result.job_id;
@@ -85,7 +85,7 @@ window.environmentComponentsMixin = {
   async mossAccelSetEnabled(enabled) {
     this.mossAccelError = null;
     try {
-      const response = await fetch('/api/moss-acceleration/enabled', {
+      const response = await fetch(window.animaUrl('/api/moss-acceleration/enabled'), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
       });
       const result = await response.json();
