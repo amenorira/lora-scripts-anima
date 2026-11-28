@@ -469,6 +469,8 @@ window.tagEditorSession = {
     }
     var d = dir || this.tagEditorDir || '';
     if (!d) {
+      if (typeof this.tagDictionaryInit === 'function') this.tagDictionaryInit();
+      if (typeof this.tagDictionaryEnsureWorker === 'function') this.tagDictionaryEnsureWorker();
       this.finishProgress();
       return;
     }
@@ -633,6 +635,10 @@ window.tagEditorSession = {
       if (epoch === this._teLoadEpoch) {
         this.tagEditorLoading = false;
         this._teLoadAbort = null;
+        if (!this.tagEditorSessionId) {
+          if (typeof this.tagDictionaryInit === 'function') this.tagDictionaryInit();
+          if (typeof this.tagDictionaryEnsureWorker === 'function') this.tagDictionaryEnsureWorker();
+        }
         this.finishProgress();
       }
     }

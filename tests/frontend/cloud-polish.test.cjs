@@ -218,3 +218,54 @@ test('tagEditorPickLocalFolder picks folders for empty/switch states and handles
   await app.tagEditorPickLocalFolder('empty');
   assert.equal(toasts.at(-1).type, 'error');
 });
+
+test('tagEditorLoad empty state initializes tag dictionary and starts worker when already installed', async () => {
+  let initCalls = 0;
+  let ensureCalls = 0;
+  let workerStarts = 0;
+  const posted = [];
+  class FakeWorker {
+    constructor(url) {
+      workerStarts++;
+      this.url = url;
+    }
+    postMessage(msg) { posted.push({ url: this.url, msg }); }
+    terminate() {}
+  }
+  const { window } = loadFrontend(['shared/utils', 'tag-dictionary/index', 'tag-editor/session'], {
+    window: { location: { protocol: 'https:', host: 'host', hostname: 'host', pathname: '/sub/' }, Worker: FakeWorker },
+    Worker: FakeWorker,
+    URL,
+    AbortSignal,
+    setTimeout: () => 1,
+    clearTimeout() {},
+    document: { baseURI: 'https://host/sub/' },
+    localStorage: { getItem: () => null, setItem() {} },
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    fetch: async () => ({
+      ok: true, status: 200,
+      json: async () => ({ status: 'success', data: { installed: true, status: 'ready', tag_count: 100 } }),
+    }),
+  });
+  const baseInit = window.tagDictionaryMixin.tagDictionaryInit;
+  const baseEnsure = window.tagDictionaryMixin.tagDictionaryEnsureWorker;
+  const app = composeMixins(window.utilsMixin, window.tagDictionaryMixin, window.tagEditorSession, {
+    currentRoute: 'tagEditor',
+    tagEditorDir: '',
+    tagDictionaryServer: { installed: true, status: 'ready', tag_count: 100 },
+    t: translator('en-US'),
+    finishProgress() {},
+    tagEditorClosePanelMenu() {},
+    tagEditorCancelQuickRemove() {},
+    _teClearInlineLookupTimer() {},
+    tagDictionaryInit() { initCalls++; return baseInit.call(this); },
+    tagDictionaryEnsureWorker() { ensureCalls++; return baseEnsure.call(this); },
+  });
+
+  await app.tagEditorLoad('');
+  assert.equal(initCalls, 1);
+  assert.equal(ensureCalls, 1);
+  assert.equal(workerStarts, 1);
+  assert.equal(posted[0].url, '/sub/anima-ui/js/tag-dictionary/worker.js');
+  assert.deepEqual(JSON.parse(JSON.stringify(posted[0].msg)), { type: 'INIT', base: '/sub/api/tageditor/dictionary/asset/' });
+});
