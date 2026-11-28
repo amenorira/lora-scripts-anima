@@ -16,7 +16,110 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend import constants
-from backend.utils import file_io, hf_download
+from backend.utils import file_io, hf_download, zip_stream
+
+
+class StreamingZipTests(unittest.TestCase):
+    def test_iter_zip_chunks_valid_archive_compression_and_missing_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            img = root / "sample" / "图1.png"
+            img.parent.mkdir(parents=True)
+            img_bytes = b"\x89PNG\r\n\x1a\n" + os.urandom(4096)
+            img.write_bytes(img_bytes)
+
+            txt = root / "sample" / "图1.txt"
+            txt_bytes = ("masterpiece, anime girl, detailed background, " * 80).encode("utf-8")
+            txt.write_bytes(txt_bytes)
+
+            empty = root / "empty.log"
+            empty.write_bytes(b"")
+
+            missing = root / "vanished.txt"
+
+            entries = [
+                (img, "sample/图1.png"),
+                (txt, "sample/图1.txt"),
+                (empty, "empty.log"),
+                (missing, "vanished.txt"),
+            ]
+            archive_bytes = b"".join(zip_stream.iter_zip_chunks(entries, compress_text=True, chunk_size=512))
+
+            with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as zf:
+                self.assertIsNone(zf.testzip())
+                self.assertEqual(zf.namelist(), ["sample/图1.png", "sample/图1.txt", "empty.log"])
+                self.assertEqual(zf.read("sample/图1.png"), img_bytes)
+                self.assertEqual(zf.read("sample/图1.txt"), txt_bytes)
+                self.assertEqual(zf.read("empty.log"), b"")
+
+                img_info = zf.getinfo("sample/图1.png")
+                txt_info = zf.getinfo("sample/图1.txt")
+                self.assertEqual(img_info.compress_type, zipfile.ZIP_STORED)
+                self.assertEqual(txt_info.compress_type, zipfile.ZIP_DEFLATED)
+                self.assertLess(txt_info.compress_size, txt_info.file_size)
+
+    def test_iter_zip_chunks_zip64_format_passes_zipfile_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            weights = root / "model.safetensors"
+            payload = b"SAFETENSORS_DATA_" * 1000
+            weights.write_bytes(payload)
+
+            archive_bytes = b"".join(
+                zip_stream.iter_zip_chunks([(weights, "model.safetensors")], compress_text=False, force_zip64=True)
+            )
+            self.assertIn(b"PK\x06\x06", archive_bytes)
+            self.assertIn(b"PK\x06\x07", archive_bytes)
+            with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as zf:
+                self.assertIsNone(zf.testzip())
+                self.assertEqual(zf.read("model.safetensors"), payload)
+
+    def test_iter_zip_chunks_propagates_permission_and_io_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "model.safetensors"
+            target.write_bytes(b"weights")
+
+            with patch.object(zip_stream, "open_read", side_effect=PermissionError(errno.EACCES, "denied")):
+                with self.assertRaises(PermissionError):
+                    b"".join(zip_stream.iter_zip_chunks([(target, "model.safetensors")]))
+
+            with patch.object(zip_stream, "open_read", side_effect=OSError(errno.EIO, "disk read error")):
+                with self.assertRaises(OSError) as raised:
+                    b"".join(zip_stream.iter_zip_chunks([(target, "model.safetensors")]))
+                self.assertEqual(raised.exception.errno, errno.EIO)
+
+            # Vanished files (FileNotFoundError) are still skipped cleanly
+            missing = root / "missing.safetensors"
+            archive = b"".join(zip_stream.iter_zip_chunks([(missing, "missing.safetensors")]))
+            with zipfile.ZipFile(io.BytesIO(archive), "r") as zf:
+                self.assertIsNone(zf.testzip())
+                self.assertEqual(zf.namelist(), [])
+
+    def test_tageditor_download_zip_streams_images_and_captions(self):
+        from backend.tageditor.routes import router as tageditor_router
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ds = Path(tmp) / "数据集"
+            ds.mkdir()
+            (ds / "01.png").write_bytes(b"\x89PNGfake")
+            (ds / "01.txt").write_text("1girl, solo", encoding="utf-8")
+            (ds / "phone.JPG").write_bytes(b"photo")
+            (ds / "phone.txt").write_text("portrait", encoding="utf-8")
+            (ds / ".hidden.png").write_bytes(b"secret")
+
+            app = FastAPI()
+            app.include_router(tageditor_router, prefix="/api")
+            with TestClient(app) as client:
+                resp = client.get("/api/tageditor/download-zip", params={"dir": str(ds)})
+                self.assertEqual(resp.status_code, 200)
+                self.assertEqual(resp.headers.get("content-type"), "application/zip")
+                self.assertEqual(resp.headers.get("x-accel-buffering"), "no")
+                self.assertIn("UTF-8''", resp.headers.get("content-disposition", ""))
+                with zipfile.ZipFile(io.BytesIO(resp.content), "r") as zf:
+                    self.assertIsNone(zf.testzip())
+                    self.assertEqual(set(zf.namelist()), {"01.png", "01.txt", "phone.JPG", "phone.txt"})
+                    self.assertEqual(zf.read("01.txt"), b"1girl, solo")
 
 
 class StorageConstantsAndRootPathTests(unittest.TestCase):

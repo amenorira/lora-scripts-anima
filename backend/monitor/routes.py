@@ -574,6 +574,10 @@ async def monitor_dataset_diagnostic_image(
     return {"status": "success", "data": detail}
 
 
+def _raise_walk_error(exc: OSError) -> None:
+    raise exc
+
+
 def _output_archive_files(root: Path, selections: list[str]):
     root = root.resolve()
     seen = set()
@@ -604,7 +608,7 @@ def _output_archive_files(root: Path, selections: list[str]):
                 seen.add(rel)
                 yield target, rel
             continue
-        for directory, dirs, names in os.walk(target):
+        for directory, dirs, names in os.walk(target, onerror=_raise_walk_error):
             parent = Path(directory)
             # Prune hidden directories, symlinks and Windows junctions before descent.
             dirs[:] = [d for d in dirs if not d.startswith((".", "__")) and visible_target(parent / d) == parent / d]
@@ -623,10 +627,10 @@ def _output_archive_files(root: Path, selections: list[str]):
 @router.get("/monitor/outputs/download")
 async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), files: str = "",
                            path: Annotated[list[str] | None, Query()] = None):
-    """下载全部或选定产物。每个 path 表示一条完整路径，files 兼容旧版客户端。"""
-    import tempfile
-    import zipfile
+    """流式打包下载全部或选定产物（O(1) 内存、无临时 ZIP 文件）。每个 path 表示一条完整路径，files 兼容旧版客户端。"""
     import urllib.parse
+    from backend.utils.zip_stream import streaming_zip_response
+
     record = await asyncio.to_thread(_resolve_run_record, run_dir, task_id)
     if not record:
         return {"status": "error", "message": "Run directory not found / 运行目录不存在", "error_code": "monitorRunNotFound"}
@@ -641,44 +645,34 @@ async def download_outputs(run_dir: str = Query(""), task_id: str = Query(""), f
 
     zip_name = f"{rd.name}_outputs.zip"
 
-    # 打包 ZIP 到临时文件（在独立线程池中，不阻塞事件循环）
-    # 使用 ZIP_STORED（不压缩）：模型文件已高度优化，DEFLATE 几乎无效且耗时
-    def _build_zip(run_dir_path: Path, paths: list[str]) -> Path | None:
-        from tools.runtime_paths import runtime_cache_dir
-
-        # A historical artifact root can contain the download cache itself.
-        tmp = tempfile.NamedTemporaryFile(prefix=".download-", suffix=".zip", delete=False,
-                                          dir=runtime_cache_dir("downloads"))
-        tmp.close()
-        dst = Path(tmp.name)
-        try:
-            with zipfile.ZipFile(dst, "w", zipfile.ZIP_STORED, allowZip64=True) as zf:
-                for source, member in _output_archive_files(run_dir_path, paths):
-                    zf.write(source, member)
-                empty = not zf.filelist
-            if empty:
-                dst.unlink()
-                return None
-        except Exception:
-            dst.unlink(missing_ok=True)
-            raise
-        return dst
-
     try:
-        tmp_path = await asyncio.to_thread(_build_zip, rd, file_list)
-        if tmp_path is None:
+        archive_entries = await asyncio.to_thread(lambda: list(_output_archive_files(rd, file_list)))
+        if not archive_entries:
             return {"status": "error", "message": "No files to download / 无可下载文件", "error_code": "monitorNoDownloadableFiles"}
+    except OSError as e:
+        failed_path = getattr(e, "filename", None)
+        detail = f"{failed_path}: {e}" if failed_path and str(failed_path) not in str(e) else str(e)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Unreadable output directory or file / 产物目录或文件不可读: {detail}",
+                "error_code": "monitorDownloadFailed",
+                "error_details": detail,
+            },
+        )
     except Exception as e:
-        return {"status": "error", "message": f"Failed to create zip: {str(e)}", "error_code": "monitorDownloadFailed", "error_details": str(e)}
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Failed to create zip: {str(e)}",
+                "error_code": "monitorDownloadFailed",
+                "error_details": str(e),
+            },
+        )
 
-    from fastapi.responses import FileResponse
-    from starlette.background import BackgroundTask
-    return FileResponse(
-        tmp_path,
-        media_type="application/zip",
-        filename=zip_name,
-        background=BackgroundTask(lambda p=tmp_path: p.unlink(missing_ok=True)),
-    )
+    return streaming_zip_response(archive_entries, zip_name, compress_text=True)
 
 
 @router.post("/monitor/outputs/reveal")

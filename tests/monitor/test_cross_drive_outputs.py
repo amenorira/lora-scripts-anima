@@ -105,22 +105,19 @@ class RunRegistryTests(CrossDriveSandbox):
         (downloads / ".download-concurrent.zip").touch()
         (self.external / "result.txt").write_bytes(b"result")
         record = {"artifact_available": True, "artifact_path": str(self.external)}
-        write_member = zipfile.ZipFile.write
 
-        def checked_write(archive, source, member):
-            self.assertNotEqual(Path(archive.filename), source, "attempted to archive the open ZIP")
-            write_member(archive, source, member)
+        async def _fetch():
+            response = await download_outputs("run", "", "")
+            chunks = []
+            async for chunk in response.body_iterator:
+                chunks.append(chunk)
+            return b"".join(chunks)
 
-        with (patch("backend.monitor.routes._resolve_run_record", return_value=record),
-              patch.object(zipfile.ZipFile, "write", checked_write),
-              patch("tools.runtime_paths.runtime_cache_dir", return_value=downloads)):
-            response = asyncio.run(download_outputs("run", "", ""))
-        try:
-            with zipfile.ZipFile(response.path) as archive:
-                self.assertEqual(archive.namelist(), ["result.txt"])
-                self.assertEqual(archive.read("result.txt"), b"result")
-        finally:
-            asyncio.run(response.background())
+        with patch("backend.monitor.routes._resolve_run_record", return_value=record):
+            payload = asyncio.run(_fetch())
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            self.assertEqual(archive.namelist(), ["result.txt"])
+            self.assertEqual(archive.read("result.txt"), b"result")
 
     def test_output_archive_includes_visible_members_once_for_overlapping_selections(self):
         from backend.monitor.routes import _output_archive_files

@@ -1,4 +1,5 @@
 import asyncio
+import io
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -175,13 +176,16 @@ class HistoryTests(CrossDriveSandbox):
                 row, = (file for file in outputs if file["category"] == "state")
                 self.assertFalse(row["resumable"])
                 self.assertNotIn("resume_issue", row)
-                response = asyncio.run(routes.download_outputs(run_id, "", path=[row["path"]]))
-                try:
-                    with zipfile.ZipFile(response.path) as archive:
-                        for file in state.iterdir():
-                            self.assertEqual(archive.read(file.relative_to(run).as_posix()), file.read_bytes())
-                finally:
-                    asyncio.run(response.background())
+                async def _download_bytes(rid=run_id, p=row["path"]):
+                    response = await routes.download_outputs(rid, "", path=[p])
+                    chunks = []
+                    async for chunk in response.body_iterator:
+                        chunks.append(chunk)
+                    return b"".join(chunks)
+
+                with zipfile.ZipFile(io.BytesIO(asyncio.run(_download_bytes()))) as archive:
+                    for file in state.iterdir():
+                        self.assertEqual(archive.read(file.relative_to(run).as_posix()), file.read_bytes())
 
     def test_moved_deepspeed_state_exposes_remaining_shards_for_download(self):
         from backend.training.checkpoint_state import STATE_INVENTORY
@@ -210,12 +214,15 @@ class HistoryTests(CrossDriveSandbox):
                 row, = (file for file in outputs if file["category"] == "state")
                 self.assertFalse(row["resumable"])
                 self.assertNotIn("resume_issue", row)
-                response = asyncio.run(routes.download_outputs("output/demo", "", path=[row["path"]]))
-                try:
-                    with zipfile.ZipFile(response.path) as archive:
-                        self.assertEqual(archive.read(shard.relative_to(run).as_posix()), b"remaining shard")
-                finally:
-                    asyncio.run(response.background())
+                async def _download_shard(p=row["path"]):
+                    response = await routes.download_outputs("output/demo", "", path=[p])
+                    chunks = []
+                    async for chunk in response.body_iterator:
+                        chunks.append(chunk)
+                    return b"".join(chunks)
+
+                with zipfile.ZipFile(io.BytesIO(asyncio.run(_download_shard()))) as archive:
+                    self.assertEqual(archive.read(shard.relative_to(run).as_posix()), b"remaining shard")
 
     def test_deleting_history_from_local_fallback_keeps_original_disk_excluded(self):
         import torch
@@ -339,3 +346,29 @@ class HistoryTests(CrossDriveSandbox):
         (self.output / "cached" / "prompts.json").unlink()  # Already imported by an earlier version.
         reused = asyncio.run(routes.get_config_from_run("output/cached"))["data"]["reuse_params"]
         self.assertEqual(Path(reused["sample_prompts"]), self.external / "cached" / "prompts.json")
+
+    def test_download_outputs_fails_fast_on_unreadable_checkpoint_subdir(self):
+        import errno
+        import os
+
+        self.make_run()
+        (self.external / "demo-000001.safetensors").write_bytes(b"weights")
+        blocked = self.external / "demo-000001-state"
+        blocked.mkdir()
+        (blocked / "optimizer.bin").write_bytes(b"state")
+
+        orig_scandir = os.scandir
+
+        def failing_scandir(path="."):
+            if Path(path).resolve() == blocked.resolve():
+                raise PermissionError(errno.EACCES, "Permission denied", str(blocked))
+            return orig_scandir(path)
+
+        with patch.object(os, "scandir", side_effect=failing_scandir):
+            response = asyncio.run(routes.download_outputs("output/demo", "", ""))
+
+        self.assertEqual(response.status_code, 500)
+        payload = json.loads(response.body.decode("utf-8"))
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(payload["error_code"], "monitorDownloadFailed")
+        self.assertIn(blocked.name, payload["message"])

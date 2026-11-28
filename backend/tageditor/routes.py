@@ -22,12 +22,12 @@ Tag Editor API 路由
 from __future__ import annotations
 
 import asyncio
-import io
-import zipfile
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Query
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse
+
+from backend.utils.zip_stream import streaming_zip_response
 
 from backend.tageditor.core import (
     resolve_dir, find_caption, read_tags, read_caption_snapshot, write_tags,
@@ -482,57 +482,51 @@ async def restore_from_backup(data: dict):
 
 @router.get("/tageditor/download-zip")
 async def download_dataset_zip(dir: str = Query("")):
-    """下载数据集目录为 zip"""
+    """流式下载数据集目录为 zip（O(1) 内存，图片使用 ZIP_STORED，标注文本使用 DEFLATE）。"""
     if not dir:
         return {"status": "error", "message": "Dataset directory path required / 请指定数据集目录路径"}
 
     dir_path = resolve_dir(dir)
-    if not dir_path.exists():
+    if not dir_path.exists() or not dir_path.is_dir():
         return {"status": "error", "message": "Directory does not exist / 目录不存在"}
 
     dir_name = dir_path.name or "dataset"
 
-    files_to_zip: list[tuple[Path, str]] = []
-    for ext in IMAGE_EXTENSIONS:
-        for img in dir_path.rglob(f"*{ext}"):
-            if img.name.startswith("."):
+    def _collect_dataset_files(root: Path) -> list[tuple[Path, str]]:
+        resolved_root = root.resolve()
+        collected: list[tuple[Path, str]] = []
+        seen: set[str] = set()
+        for img in root.rglob("*"):
+            if img.suffix.lower() not in IMAGE_EXTENSIONS or img.name.startswith(".") or not img.is_file():
                 continue
             try:
-                arcname = str(img.relative_to(dir_path)).replace("\\", "/")
-            except ValueError:
-                arcname = img.name
-            files_to_zip.append((img, arcname))
+                resolved_img = img.resolve()
+                rel_parts = resolved_img.relative_to(resolved_root).parts
+            except (OSError, ValueError):
+                continue
+            if any(part.startswith((".", "__")) for part in rel_parts):
+                continue
+            arcname = "/".join(rel_parts)
+            if arcname not in seen:
+                seen.add(arcname)
+                collected.append((resolved_img, arcname))
             cap = find_caption(img)
             if cap and cap.exists():
                 try:
-                    cap_arc = str(cap.relative_to(dir_path)).replace("\\", "/")
-                except ValueError:
-                    cap_arc = cap.name
-                files_to_zip.append((cap, cap_arc))
+                    resolved_cap = cap.resolve()
+                    cap_parts = resolved_cap.relative_to(resolved_root).parts
+                except (OSError, ValueError):
+                    continue
+                if any(part.startswith((".", "__")) for part in cap_parts):
+                    continue
+                cap_arc = "/".join(cap_parts)
+                if cap_arc not in seen:
+                    seen.add(cap_arc)
+                    collected.append((resolved_cap, cap_arc))
+        return collected
 
-    import asyncio
-    import urllib.parse
-
-    def _write_zip():
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path, arcname in files_to_zip:
-                try:
-                    zf.write(file_path, arcname)
-                except FileNotFoundError:
-                    pass  # file deleted during zip building
-        buf.seek(0)
-        return buf
-
-    loop = asyncio.get_event_loop()
-    buf = await loop.run_in_executor(None, _write_zip)
-
-    # RFC 5987: URL-encode non-ASCII filename for Content-Disposition header
-    encoded_name = urllib.parse.quote(f"{dir_name}.zip")
-    return StreamingResponse(
-        buf, media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}"},
-    )
+    files_to_zip = await asyncio.to_thread(_collect_dataset_files, dir_path)
+    return streaming_zip_response(files_to_zip, f"{dir_name}.zip", compress_text=True)
 
 
 @router.get("/tageditor/timeline")
