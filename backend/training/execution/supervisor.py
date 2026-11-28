@@ -206,11 +206,12 @@ def run_train(
     script = _get_trainer_script(trainer_file)
     engine = get_engine(engine_id)
     if engine.python_executable is not None and not engine.python_executable.is_file():
+        launcher = "start.bat" if sys.platform == "win32" else "start.sh"
         return {
             "status": "error",
             "message": (
                 f"Training runtime is not installed / 训练核心运行环境未安装: "
-                f"{engine.python_executable}. Please run start.bat to provision the {engine.label} core."
+                f"{engine.python_executable}. Please run {launcher} to provision the {engine.label} core."
             ),
         }
 

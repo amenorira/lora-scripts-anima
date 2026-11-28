@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import locale
 import os
-import platform
 import re
 import shlex
 import shutil
@@ -339,6 +338,20 @@ def setup_onnxruntime(onnx_version: Optional[str] = None,
 
 # ── 启动编排 ─────────────────────────────────────────────
 
+# onnxruntime-gpu 由 setup_onnxruntime() 按当前 torch 的 CUDA 大版本单独管理，
+# 不在 check_requirements() 中按 requirements.txt 静态钉版覆盖，避免 CUDA 12 环境循环拉锯。
+_REQUIREMENTS_MANAGED_ELSEWHERE = frozenset({"onnxruntime-gpu", "onnxruntime"})
+
+
+def _requirement_name(line: str) -> str:
+    candidate = line.rsplit("/", 1)[-1]
+    try:
+        name = Requirement(candidate).name
+    except Exception:
+        name = re.split(r"[<>=!~\[\s;]", candidate)[0].strip()
+    return name.lower().replace("_", "-")
+
+
 def check_requirements() -> None:
     """对照 requirements.txt 补齐缺失依赖。"""
     req_file = Path(__file__).parents[1] / "requirements.txt"
@@ -349,7 +362,11 @@ def check_requirements() -> None:
     missing = []
     for raw_line in req_file.read_text(encoding="utf-8").splitlines():
         line = raw_line.split("#", 1)[0].strip()
-        if line and not is_installed(line):
+        if not line:
+            continue
+        if _requirement_name(line) in _REQUIREMENTS_MANAGED_ELSEWHERE:
+            continue
+        if not is_installed(line):
             missing.append(line)
 
     if not missing:

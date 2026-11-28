@@ -6,7 +6,15 @@ export ANIMA_STARTUP_STARTED_AT="$(date +%s.%N)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
+VENV_DIR="${ANIMA_VENV_DIR:-$SCRIPT_DIR/venv}"
+USE_SYSTEM_PYTHON=0
+SKIP_RUNTIME_SYNC=0
+case "${ANIMA_USE_SYSTEM_PYTHON:-0}" in
+    1|true|TRUE|yes|YES|on|ON) USE_SYSTEM_PYTHON=1 ;;
+esac
+case "${ANIMA_SKIP_RUNTIME_SYNC:-0}" in
+    1|true|TRUE|yes|YES|on|ON) SKIP_RUNTIME_SYNC=1 ;;
+esac
 
 # Match backend.log.COLORS without requiring Python during bootstrap.
 _C_TEXT='' _C_TIME='' _C_ACCENT='' _C_SUCCESS='' _C_WARNING='' _C_ERROR='' _C_RESET=''
@@ -77,15 +85,59 @@ _stop_startup_spinner() {
 _start_startup_spinner
 
 QUIET=0
-for arg in "$@"; do
-    if [ "$arg" = "--quiet" ] || [ "$arg" = "-q" ]; then
-        QUIET=1
-    fi
+GUI_ARGS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --quiet|-q)
+            QUIET=1
+            shift
+            ;;
+        --venv)
+            if [ $# -lt 2 ]; then
+                _stop_startup_spinner
+                _console_message "[FAIL] --venv requires a directory path. / --venv 需要指定目录路径。"
+                exit 2
+            fi
+            VENV_DIR="$2"
+            shift 2
+            ;;
+        --venv=*)
+            VENV_DIR="${1#--venv=}"
+            shift
+            ;;
+        --use-system-python)
+            USE_SYSTEM_PYTHON=1
+            shift
+            ;;
+        --skip-runtime-sync)
+            SKIP_RUNTIME_SYNC=1
+            shift
+            ;;
+        --data-dir|--root-path)
+            if [ $# -lt 2 ]; then
+                _stop_startup_spinner
+                _console_message "[FAIL] $1 requires a value. / $1 需要提供参数值。"
+                exit 2
+            fi
+            GUI_ARGS+=("$1" "$2")
+            shift 2
+            ;;
+        --data-dir=*|--root-path=*|--strict-port)
+            GUI_ARGS+=("$1")
+            shift
+            ;;
+        *)
+            GUI_ARGS+=("$1")
+            shift
+            ;;
+    esac
 done
 
+VENV_PYTHON="$VENV_DIR/bin/python"
+
 # -- Bootstrap: select 64-bit Python 3.12 --
-# Prefer an existing compatible venv, then a versioned interpreter. Python
-# 3.13/3.14 cannot install some pinned wheels used by this project.
+# Prefer an existing compatible venv (unless --use-system-python is set), then a
+# versioned interpreter. Python 3.13/3.14 cannot install some pinned wheels used by this project.
 _is_supported_python() {
     "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] == (3, 12) and sys.maxsize > 2**32 else 1)' >/dev/null 2>&1
 }
@@ -93,12 +145,13 @@ _is_supported_python() {
 PYTHON_BIN=""
 PYTHON_SOURCE=""
 
-if [ -f "$VENV_PYTHON" ]; then
+if [ "$USE_SYSTEM_PYTHON" != "1" ] && [ -f "$VENV_PYTHON" ]; then
     if ! _is_supported_python "$VENV_PYTHON"; then
+        _stop_startup_spinner
         _console_message "[FAIL] Existing venv uses an unsupported Python version or architecture. / 现有 venv 使用了不受支持的 Python 版本或架构。"
         "$VENV_PYTHON" --version 2>/dev/null || true
         _console_message "       Supported: 64-bit Python 3.12. / 支持 64 位 Python 3.12。"
-        _console_message "       Rename or remove only this project's 'venv' folder, then rerun start.sh. / 请只重命名或删除本项目的 venv 文件夹后重新运行 start.sh。"
+        _console_message "       Rename or remove only this project's venv folder ($VENV_DIR), then rerun start.sh. / 请只重命名或删除本项目的 venv 文件夹后重新运行 start.sh。"
         exit 1
     fi
     PYTHON_BIN="$VENV_PYTHON"
@@ -125,6 +178,13 @@ if [ -z "$PYTHON_BIN" ]; then
     exit 1
 fi
 
+if [ "$USE_SYSTEM_PYTHON" = "1" ]; then
+    RUNTIME_PYTHON="$PYTHON_BIN"
+    PYTHON_SOURCE="system ($PYTHON_SOURCE)"
+else
+    RUNTIME_PYTHON="$VENV_PYTHON"
+fi
+
 _stop_startup_spinner
 _console_message "[Setup] Using Python from $PYTHON_SOURCE: $PYTHON_BIN / 正在使用 Python：$PYTHON_BIN"
 "$PYTHON_BIN" --version
@@ -149,7 +209,7 @@ fi
 _fix_pip_mirror() {
     local hosts=""
     local skip_probe=0
-    local py="$VENV_PYTHON"
+    local py="$RUNTIME_PYTHON"
     [ -f "$py" ] || py="$PYTHON_BIN"
     # 探测 pip 配置中的 index-url 与 extra-index-url（涵盖 pip.conf 与环境变量合并后的生效值）
     local key val
@@ -195,23 +255,57 @@ _fix_pip_mirror() {
     fi
 }
 
+_pip_install() {
+    local py="$1"
+    shift
+    local orig_args=("$@")
+    if [ "${ANIMA_NO_UV:-0}" != "1" ] && command -v uv >/dev/null 2>&1; then
+        local uv_args=(--python "$py")
+        if [ -n "${PIP_INDEX_URL:-}" ] && [ -z "${UV_INDEX_URL:-}" ]; then
+            uv_args+=(--index-url "$PIP_INDEX_URL")
+        fi
+        if [ -n "${PIP_EXTRA_INDEX_URL:-}" ] && [ -z "${UV_EXTRA_INDEX_URL:-}" ]; then
+            uv_args+=(--extra-index-url "$PIP_EXTRA_INDEX_URL")
+        fi
+        local filtered=()
+        local skip_next=0
+        local item
+        for item in "${orig_args[@]}"; do
+            if [ "$skip_next" = "1" ]; then
+                skip_next=0
+                continue
+            fi
+            if [ "$item" = "--upgrade-strategy" ]; then
+                skip_next=1
+                continue
+            fi
+            filtered+=("$item")
+        done
+        if uv pip install "${uv_args[@]}" "${filtered[@]}"; then
+            return 0
+        fi
+        _console_message "[Notice] uv pip install failed; falling back to pip. / uv 安装失败，已回退到 pip。"
+    fi
+    "$py" -m pip install "${orig_args[@]}"
+}
+
 # -- Install function --
 ensure_musubi_shared_runtime() {
-    if [ ! -f "$VENV_PYTHON" ]; then
-        _console_message "[ERROR] Main venv is required before Krea 2 runtime synchronization. / 同步 Krea 2 运行时前需要主 venv。"
+    if [ ! -f "$RUNTIME_PYTHON" ]; then
+        _console_message "[ERROR] Python runtime is required before Krea 2 runtime synchronization. / 同步 Krea 2 运行时前需要可用的 Python 运行时。"
         exit 1
     fi
 
     # The root requirements.txt is the single authority for the shared
     # training stack. The hot path only reads metadata, so normal GUI
     # launches do not download/rewrite packages or import Qwen3-VL.
-    if "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check; then
+    if "$RUNTIME_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check; then
         return
     fi
 
     _console_message "[Sync] Synchronizing shared training dependencies... / 正在同步共享训练依赖……"
-    "$VENV_PYTHON" -m pip install --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements.txt" || { _console_message "[ERROR] shared training dependencies install failed. / 共享训练依赖安装失败。"; exit 1; }
-    "$VENV_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports || { _console_message "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
+    _pip_install "$RUNTIME_PYTHON" --upgrade-strategy only-if-needed -r "$SCRIPT_DIR/requirements.txt" || { _console_message "[ERROR] shared training dependencies install failed. / 共享训练依赖安装失败。"; exit 1; }
+    "$RUNTIME_PYTHON" -X utf8 -m tools.ensure_musubi_runtime --check --verify-imports || { _console_message "[ERROR] Shared musubi runtime verification failed. / musubi 共享运行时校验失败。"; exit 1; }
 }
 
 do_install() {
@@ -223,20 +317,20 @@ do_install() {
     export PIP_PREFER_BINARY=1
 
     if [ ! -f "$VENV_PYTHON" ]; then
-        _console_message "Creating venv... / 正在创建 venv……"
-        $PYTHON_BIN -m venv venv || { _console_message "[ERROR] Failed to create venv. / 创建 venv 失败。"; exit 1; }
+        _console_message "Creating venv at $VENV_DIR... / 正在创建 venv（$VENV_DIR）……"
+        "$PYTHON_BIN" -m venv "$VENV_DIR" || { _console_message "[ERROR] Failed to create venv. / 创建 venv 失败。"; exit 1; }
         _console_message "Upgrading pip... / 正在升级 pip……"
-        "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null
+        "$VENV_PYTHON" -m pip install --upgrade pip -q 2>/dev/null || true
     fi
 
     _console_message "[1/2] Installing PyTorch 2.12.1+cu130... / 正在安装 PyTorch 2.12.1+cu130……"
     # 预锁定 setuptools 版本，避免 PyTorch 拉入 82+ 后被 [2/2] 降级
-    "$VENV_PYTHON" -m pip install "setuptools>=68,<82" -q || { _console_message "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
-    "$VENV_PYTHON" -m pip install torch==2.12.1+cu130 torchvision==0.27.1+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
+    _pip_install "$VENV_PYTHON" "setuptools>=68,<82" -q || { _console_message "[ERROR] setuptools pre-lock failed. / setuptools 版本预锁定失败。"; exit 1; }
+    _pip_install "$VENV_PYTHON" torch==2.12.1+cu130 torchvision==0.27.1+cu130 --extra-index-url https://download.pytorch.org/whl/cu130
     if [ $? -ne 0 ]; then _console_message "[ERROR] PyTorch install failed. / PyTorch 安装失败。"; exit 1; fi
 
     _console_message "[2/2] Installing project dependencies... / 正在安装项目依赖……"
-    "$VENV_PYTHON" -m pip install -r requirements.txt
+    _pip_install "$VENV_PYTHON" -r requirements.txt
     if [ $? -ne 0 ]; then _console_message "[ERROR] Project dependencies install failed. / 项目依赖安装失败。"; exit 1; fi
 
     ensure_musubi_shared_runtime
@@ -254,8 +348,8 @@ case ":${PYTHONPATH:-}:" in
     *) export PYTHONPATH="$STARTUP_HOOKS${PYTHONPATH:+:$PYTHONPATH}" ;;
 esac
 _fix_pip_mirror
-if [ ! -f "$VENV_PYTHON" ]; then
-    _console_message "[Notice] Virtual environment (venv) not found. / 未找到虚拟环境（venv）。"
+if [ "$USE_SYSTEM_PYTHON" != "1" ] && [ ! -f "$VENV_PYTHON" ]; then
+    _console_message "[Notice] Virtual environment (venv) not found at $VENV_DIR. / 未找到虚拟环境（$VENV_DIR）。"
     if [ "$QUIET" = "1" ]; then
         _console_message "  --quiet mode: auto-installing... / --quiet 模式：自动安装……"
         do_install
@@ -273,7 +367,12 @@ if [ ! -f "$VENV_PYTHON" ]; then
 fi
 
 # -- Managed CUDA runtime migration --
-"$VENV_PYTHON" -X utf8 -m tools.ensure_runtime
+RUNTIME_SYNC_ARGS=()
+if [ "$SKIP_RUNTIME_SYNC" = "1" ]; then
+    export ANIMA_SKIP_RUNTIME_SYNC=1
+    RUNTIME_SYNC_ARGS+=(--skip-runtime-sync)
+fi
+"$RUNTIME_PYTHON" -X utf8 -m tools.ensure_runtime "${RUNTIME_SYNC_ARGS[@]}"
 if [ $? -ne 0 ]; then
     _console_message "[ERROR] CUDA 13.0 runtime synchronization failed. / CUDA 13.0 运行时同步失败。"
     exit 1
@@ -283,4 +382,4 @@ fi
 ensure_musubi_shared_runtime
 
 # -- Launch --
-"$VENV_PYTHON" -m backend.gui "$@"
+"$RUNTIME_PYTHON" -m backend.gui "${GUI_ARGS[@]}"

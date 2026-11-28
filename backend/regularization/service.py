@@ -2,6 +2,7 @@
 import copy
 import os
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -301,10 +302,10 @@ def _launch(task, root, manifest):
     (root / ".cancel").unlink(missing_ok=True)
     manifest.update(task_id=task.task_id, status="created", phase="loading", worker=None, error="", updated_at=time.time())
     storage.save_manifest(root, manifest)
-    python = REPO_ROOT / "venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    python = Path(sys.executable)
     try:
         if not python.is_file():
-            raise RuntimeError("Project venv is missing / 项目 venv 不存在")
+            raise RuntimeError("Python interpreter is missing / Python 解释器不存在")
         task.environ["PYTHONPATH"] = str(REPO_ROOT) + os.pathsep + task.environ.get("PYTHONPATH", "")
         task.environ["PYTHONUNBUFFERED"] = "1"
         task.configure_reserved([str(python), "-m", "backend.regularization.worker", "--run-dir", str(root)])
