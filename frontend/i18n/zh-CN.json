@@ -3112,7 +3112,11 @@
 		"slowConnectionModeDefaultDesc": "尚未手动设置时，浏览器报告低速连接或启用省流量模式会默认开启。",
 		"disableSlowConnectionTitle": "关闭慢速远程连接兼容？",
 		"disableSlowConnectionMessage": "关闭后会同时请求更多预览图片。慢速或波动连接下，这可能拖慢实时状态更新和页面响应。",
-		"disableSlowConnectionConfirm": "仍然关闭"
+		"disableSlowConnectionConfirm": "仍然关闭",
+		"desktopNotifications": "训练完成浏览器通知",
+		"desktopNotificationsDesc": "训练完成、停止或失败时发送浏览器桌面通知。",
+		"desktopNotificationsUnsupported": "当前浏览器或连接环境不支持桌面通知。",
+		"desktopNotificationsDenied": "浏览器未授予通知权限，请在站点设置中允许通知。"
 	},
 	"environment": {
 		"fa": {

@@ -502,6 +502,33 @@ test('trainingControlMixin defaults controlSaveWeights/controlSaveState to false
   assert.deepEqual(JSON.parse(postReq.body), { action: 'stop', mode: 'discard' });
 });
 
+test('browser completion notifications are gated by desktopNotifications preference', () => {
+  const shown = [];
+  class FakeNotification {
+    static permission = 'granted';
+    constructor(title, opts) { shown.push({ title, body: opts.body }); }
+  }
+  const { window } = loadFrontend(['shared/utils', 'monitor/core'], {
+    window: { Notification: FakeNotification },
+    Notification: FakeNotification,
+    document: { title: 'Anima' },
+    setInterval: () => 1,
+    clearInterval() {},
+  });
+  const app = composeMixins(window.utilsMixin, window.monitorCoreMixin, {
+    desktopNotifications: false,
+    t: translator('en-US'),
+    toast() {},
+  });
+
+  app.handleTaskCompletion('RUNNING', 'FINISHED');
+  assert.equal(shown.length, 0);
+
+  app.desktopNotifications = true;
+  app.handleTaskCompletion('RUNNING', 'FINISHED');
+  assert.equal(shown.length, 1);
+});
+
 test('tag editor directory inputs use shared field-input-wrap with local and built-in folder pickers and confirm dialog has no copy/fold details', () => {
   const html = readRepo('frontend/index.html');
   const css = readRepo('frontend/css/app.css');

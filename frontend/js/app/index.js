@@ -68,6 +68,7 @@ document.addEventListener('alpine:init', () => {
     // UI Settings
     autoLoadHistory: true,
     confirmPreviewBeforeTraining: true,
+    desktopNotifications: false,
     selectedGpuIndex: 0,
 
     // Backend connectivity
@@ -533,6 +534,7 @@ document.addEventListener('alpine:init', () => {
         const s = JSON.parse(localStorage.getItem('anima-ui-settings')||'{}');
         if (s.autoLoadHistory!==undefined) this.autoLoadHistory = s.autoLoadHistory;
         if (typeof s.confirmPreviewBeforeTraining === 'boolean') this.confirmPreviewBeforeTraining = s.confirmPreviewBeforeTraining;
+        if (typeof s.desktopNotifications === 'boolean') this.desktopNotifications = s.desktopNotifications;
         if (typeof s.weakNetworkMode === 'boolean') {
           this.weakNetworkMode = s.weakNetworkMode;
         } else {
@@ -561,10 +563,40 @@ document.addEventListener('alpine:init', () => {
       localStorage.setItem('anima-ui-settings', JSON.stringify({
         autoLoadHistory: this.autoLoadHistory,
         confirmPreviewBeforeTraining: this.confirmPreviewBeforeTraining,
+        desktopNotifications: this.desktopNotifications,
         weakNetworkMode: this.weakNetworkMode,
       }));
       this.resolveTheme();
       this.toast(this.t('common.saved'));
+    },
+
+    async setDesktopNotifications(enabled, input) {
+      const next = !!enabled;
+      if (!next) {
+        this.desktopNotifications = false;
+        this.saveUISettings();
+        return;
+      }
+      if (typeof Notification === 'undefined' || !('Notification' in window)) {
+        this.desktopNotifications = false;
+        if (input) input.checked = false;
+        this.toast(this.t('settings.desktopNotificationsUnsupported'), 'warning');
+        return;
+      }
+      let permission = Notification.permission;
+      if (permission === 'default' && typeof Notification.requestPermission === 'function') {
+        try { permission = await Notification.requestPermission(); }
+        catch (_) { permission = 'denied'; }
+      }
+      if (permission !== 'granted') {
+        this.desktopNotifications = false;
+        if (input) input.checked = false;
+        this.saveUISettings();
+        this.toast(this.t('settings.desktopNotificationsDenied'), 'warning');
+        return;
+      }
+      this.desktopNotifications = true;
+      this.saveUISettings();
     },
 
     requestWeakNetworkModeChange(enabled, input) {

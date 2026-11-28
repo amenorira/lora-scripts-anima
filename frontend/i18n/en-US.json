@@ -3112,7 +3112,11 @@
 		"slowConnectionModeDefaultDesc": "Before you choose a setting, it defaults on when the browser reports a slow connection or data saver.",
 		"disableSlowConnectionTitle": "Turn off slow connection compatibility?",
 		"disableSlowConnectionMessage": "More preview images will load at once. On slow or unstable connections, that can delay realtime status updates and page response.",
-		"disableSlowConnectionConfirm": "Turn off anyway"
+		"disableSlowConnectionConfirm": "Turn off anyway",
+		"desktopNotifications": "Training completion notifications",
+		"desktopNotificationsDesc": "Show a browser notification when training finishes, stops, or fails.",
+		"desktopNotificationsUnsupported": "Browser notifications are not supported in this context.",
+		"desktopNotificationsDenied": "Notification permission was not granted. Allow notifications in site settings."
 	},
 	"environment": {
 		"fa": {

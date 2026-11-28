@@ -528,7 +528,7 @@ window.monitorCoreMixin = {
     if (!['RUNNING', 'CREATED'].includes(prevState) || !outcomes[newState]) return;
     const msg = this.t(outcomes[newState]);
     this.toast(msg, newState === 'FAILED' ? 'error' : 'info');
-    if ('Notification' in window && Notification.permission === 'granted') {
+    if (this.desktopNotifications && 'Notification' in window && Notification.permission === 'granted') {
       new Notification('lora-scripts-anima', { body: msg });
     }
     const origTitle = document.title;

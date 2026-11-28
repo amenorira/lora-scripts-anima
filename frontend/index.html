@@ -1679,6 +1679,16 @@
                   <span class="toggle-track"><span class="toggle-thumb"></span></span>
                 </span>
               </label>
+              <label class="settings-row">
+                <span class="settings-row-main">
+                  <span class="settings-row-label" id="desktopNotificationsSetting" x-text="t('settings.desktopNotifications')">Training completion notifications</span>
+                  <span class="settings-row-desc" id="desktopNotificationsSettingDesc" x-text="t('settings.desktopNotificationsDesc')">Show a browser notification when training finishes, stops, or fails.</span>
+                </span>
+                <span class="settings-row-action toggle">
+                  <input type="checkbox" :checked="desktopNotifications" @change="setDesktopNotifications($event.target.checked, $event.target)" aria-labelledby="desktopNotificationsSetting" aria-describedby="desktopNotificationsSettingDesc">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </span>
+              </label>
             </div>
           </section>
           <section aria-labelledby="settingsConnectionTitle">

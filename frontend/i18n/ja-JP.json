@@ -3112,7 +3112,11 @@
 		"slowConnectionModeDefaultDesc": "手動で設定する前は、ブラウザが低速接続またはデータセーバーを報告した場合に自動で有効になります。",
 		"disableSlowConnectionTitle": "低速接続向けモードをオフにしますか？",
 		"disableSlowConnectionMessage": "同時に読み込むサンプル画像が増えます。低速・不安定な接続では、状態のリアルタイム更新や画面の応答が遅れる場合があります。",
-		"disableSlowConnectionConfirm": "オフにする"
+		"disableSlowConnectionConfirm": "オフにする",
+		"desktopNotifications": "学習完了時のブラウザ通知",
+		"desktopNotificationsDesc": "学習の完了・停止・失敗時にブラウザ通知を表示します。",
+		"desktopNotificationsUnsupported": "この環境ではブラウザ通知を利用できません。",
+		"desktopNotificationsDenied": "通知の権限が許可されていません。サイト設定で通知を許可してください。"
 	},
 	"environment": {
 		"fa": {
