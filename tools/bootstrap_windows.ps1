@@ -1075,7 +1075,6 @@ function Repair-PipMirrorForProcess {
             if ($autoUrl) {
                 $env:PIP_INDEX_URL = $autoUrl
                 $env:ANIMA_AUTO_PIP_INDEX_URL = $autoUrl
-                Write-Text "pip_mirror_auto" @($env:PIP_INDEX_URL) -Color Cyan
                 break
             }
         }

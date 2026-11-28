@@ -250,7 +250,6 @@ _fix_pip_mirror() {
         if [ -n "$auto_url" ]; then
             export PIP_INDEX_URL="$auto_url"
             export ANIMA_AUTO_PIP_INDEX_URL="$auto_url"
-            _console_message "[Setup] Auto-selected PyPI mirror for this launch: $auto_url / 本次启动已自动选用 PyPI 镜像：$auto_url"
         fi
     fi
 }
