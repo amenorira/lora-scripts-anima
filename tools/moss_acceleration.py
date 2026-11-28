@@ -39,7 +39,7 @@ def runtime_signature() -> dict:
     return {"python": f"{sys.version_info.major}.{sys.version_info.minor}", "platform": sys.platform,
             "machine": {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine),
             "bits": struct.calcsize("P") * 8, "packages": packages,
-            "host": platform.node(), "interpreter": str(Path(sys.executable).resolve())}
+            "interpreter": str(Path(sys.executable).resolve())}
 
 
 def platform_tag(env: dict) -> str | None:
@@ -93,7 +93,10 @@ def _site(state: dict) -> Path | None:
 
 
 def _available(state: dict, env: dict) -> bool:
-    return bool(_site(state) and state.get("signature") == env and state.get("catalog") == _catalog_digest()
+    sig = state.get("signature")
+    sig_norm = {k: v for k, v in sig.items() if k != "host"} if isinstance(sig, dict) else None
+    env_norm = {k: v for k, v in env.items() if k != "host"} if isinstance(env, dict) else None
+    return bool(_site(state) and sig_norm == env_norm and state.get("catalog") == _catalog_digest()
                 and isinstance(state.get("verification"), dict) and state["verification"].get("ok") is True
                 and not incompatibility(env))
 

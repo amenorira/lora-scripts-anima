@@ -413,6 +413,40 @@ class LaunchUtilsAndCloudPolishTests(unittest.TestCase):
 
             build_cp.assert_not_called()
 
+    def test_moss_runtime_signature_excludes_hostname_and_accepts_legacy_host_key(self):
+        with patch.object(accel.platform, "node", return_value="container-a"):
+            sig_a = accel.runtime_signature()
+        with patch.object(accel.platform, "node", return_value="container-b"):
+            sig_b = accel.runtime_signature()
+        self.assertNotIn("host", sig_a)
+        self.assertEqual(sig_a, sig_b)
+
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td)
+            bundle = "b" * 32
+            site = cache / "installs" / bundle / "site"
+            for rel in ("fla/__init__.py", "causal_conv1d/__init__.py"):
+                p = site / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.touch()
+            env = {
+                "python": "3.12",
+                "bits": 64,
+                "platform": "linux",
+                "machine": "x86_64",
+                "packages": {**accel.BASELINE, "triton": "3.7.1", "triton-windows": None},
+                "interpreter": "/venv/bin/python",
+            }
+            legacy_state = {
+                "bundle": bundle,
+                "enabled": True,
+                "signature": {**env, "host": "old-container-name"},
+                "catalog": accel._catalog_digest(),
+                "verification": {"ok": True},
+            }
+            with patch.object(accel, "CACHE", cache):
+                self.assertTrue(accel._available(legacy_state, env))
+
     def test_supervisor_launcher_hint_is_platform_aware(self):
         missing_exe = Path("/nonexistent/venv/bin/python")
         fake_engine = SimpleNamespace(python_executable=missing_exe, label="Krea 2")
