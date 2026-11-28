@@ -243,6 +243,7 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
             from backend.log import console as rich_console
         except Exception:
             rich_console = None
+        use_progress_bar = rich_console is not None and bool(getattr(rich_console, "is_terminal", False))
         progress_bar = None
         state = {"task_id": None}
 
@@ -256,6 +257,8 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
                 pass
 
         def _on_progress(_line: str):
+            if progress_bar is None:
+                return
             try:
                 with _download_jobs_lock:
                     progress = dict(shared_progress)
@@ -273,8 +276,9 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
                 pass
 
         try:
-            progress_bar = make_progress_bar(console=rich_console)
-            progress_bar.start()
+            if use_progress_bar:
+                progress_bar = make_progress_bar(console=rich_console)
+                progress_bar.start()
             paths = download_anima_files(
                 dest_dir=SD_MODELS_DIR,
                 progress=shared_progress,
@@ -300,16 +304,16 @@ def _start_download_job(only_file: str | None = None, group: str | None = None) 
                 _download_jobs[job_id]["done"] = True
                 _download_jobs[job_id]["success"] = False
         finally:
-            try:
-                if progress_bar is not None:
+            if progress_bar is not None:
+                try:
                     progress_bar.stop()
-            except Exception:
-                pass
-            try:
-                sys.stderr.write("\n")
-                sys.stderr.flush()
-            except Exception:
-                pass
+                except Exception:
+                    pass
+                try:
+                    sys.stderr.write("\n")
+                    sys.stderr.flush()
+                except Exception:
+                    pass
 
     try:
         threading.Thread(target=_run, daemon=True).start()

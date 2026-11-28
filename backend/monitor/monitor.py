@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import time
 from pathlib import Path
@@ -39,6 +40,20 @@ _MAX_REALTIME_LOG_LINES = 1000
 _MAX_REALTIME_METRIC_POINTS = 256
 _DEFAULT_SAMPLE_INTERVAL = 1.0
 _FUSE_SAMPLE_INTERVAL = 2.0
+_DEFAULT_CONSOLE_PROGRESS_INTERVAL = 30.0
+
+
+def _resolve_console_progress_interval(default: float = _DEFAULT_CONSOLE_PROGRESS_INTERVAL) -> float:
+    """Resolve non-TTY plain-text progress log interval from ANIMA_CONSOLE_PROGRESS_INTERVAL."""
+    raw = os.environ.get("ANIMA_CONSOLE_PROGRESS_INTERVAL", "").strip()
+    if raw:
+        try:
+            value = float(raw)
+            if math.isfinite(value) and value >= 0:
+                return value
+        except ValueError:
+            pass
+    return default
 
 
 def resolve_monitor_interval(run_dir: Path | None = None, *, default: float = _DEFAULT_SAMPLE_INTERVAL) -> float:
@@ -108,6 +123,15 @@ def _bounded_realtime_metrics(points: dict[str, list[dict]]) -> tuple[dict[str, 
     return bounded, truncated
 
 
+def _console_is_terminal() -> bool:
+    """Gate Rich Live/Progress redraws so non-TTY cloud logs stay clean."""
+    try:
+        from backend.log import console as rich_console
+    except Exception:
+        return False
+    return rich_console is not None and bool(getattr(rich_console, "is_terminal", False))
+
+
 def _build_console_progress():
     """惰性加载单行进度条；终端缩放不影响训练监控。"""
     from backend.monitor.console_progress import build_console_progress
@@ -135,6 +159,8 @@ class TaskMonitor:
         self._console_progress = None
         self._progress_task_id = None
         self._progress_active_task: str | None = None  # 当前显示进度的 task_id
+        self._last_plain_progress_at: float | None = None
+        self._plain_progress_completed: bool = False
 
     async def start(self) -> None:
         """启动监控器"""
@@ -169,9 +195,67 @@ class TaskMonitor:
         self._console_progress = None
         self._progress_task_id = None
         self._progress_active_task = None
+        self._last_plain_progress_at = None
+        self._plain_progress_completed = False
+
+    def _log_plain_console_progress(self, task_id: str, progress: dict, output_name: str) -> None:
+        """非 TTY 环境下以节流纯文本日志输出训练进度（适配 Colab / Docker 日志）。"""
+        try:
+            step = int(progress.get("step") or 0)
+            total = int(progress.get("total_steps") or 0)
+        except (TypeError, ValueError):
+            return
+        if total <= 0 or step <= 0:
+            return
+
+        if self._progress_active_task and self._progress_active_task != task_id:
+            self._stop_console_progress()
+
+        now = time.monotonic()
+        interval = _resolve_console_progress_interval()
+        is_first = self._last_plain_progress_at is None
+        is_complete = step >= total
+        if is_complete and self._plain_progress_completed:
+            return
+        if not is_first and not is_complete and (now - self._last_plain_progress_at) < interval:
+            return
+
+        pct = max(0.0, min(100.0, (step / total) * 100.0))
+        header = f"Training {' '.join(str(output_name or '').split())}".strip()
+        parts = [header, f"step {step}/{total} ({pct:.1f}%)"]
+
+        def _clean(val: Any) -> str:
+            if val is None:
+                return ""
+            return " ".join(str(val).split())
+
+        epoch = _clean(progress.get("epoch"))
+        if epoch:
+            parts.append(f"epoch {epoch}")
+        loss = _clean(progress.get("loss"))
+        if loss:
+            parts.append(f"loss {loss}")
+        lr = _clean(progress.get("lr"))
+        if lr:
+            parts.append(f"lr {lr}")
+        speed = _clean(progress.get("speed"))
+        if speed:
+            parts.append(speed)
+        eta = _clean(progress.get("eta"))
+        if eta:
+            parts.append(f"ETA {eta}")
+
+        logger.info(" | ".join(parts))
+        self._progress_active_task = task_id
+        self._last_plain_progress_at = now
+        if is_complete:
+            self._plain_progress_completed = True
 
     def _update_console_progress(self, task_id: str, progress: dict, output_name: str) -> None:
         """更新控制台单行训练进度条"""
+        if not _console_is_terminal():
+            self._log_plain_console_progress(task_id, progress, output_name)
+            return
         step = progress.get("step", 0)
         total = progress.get("total_steps", 0)
         if not total:

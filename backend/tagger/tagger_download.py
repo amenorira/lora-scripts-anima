@@ -60,7 +60,8 @@ def tagger_hub_download(
         from backend.log import console as _rc
     except Exception:
         _rc = None
-    progress_bar = make_progress_bar(console=_rc)
+    use_progress_bar = _rc is not None and bool(getattr(_rc, "is_terminal", False))
+    progress_bar = make_progress_bar(console=_rc) if use_progress_bar else None
 
     shared: dict = {}
     lock = threading.Lock()
@@ -73,6 +74,8 @@ def tagger_hub_download(
             pass
 
     def _on_progress(line):
+        if progress_bar is None:
+            return
         try:
             with lock:
                 p = dict(shared)
@@ -90,7 +93,8 @@ def tagger_hub_download(
         except Exception:
             pass
 
-    progress_bar.start()
+    if progress_bar is not None:
+        progress_bar.start()
     try:
         download_hf_file(
             repo_id, filename, dest,
@@ -106,18 +110,20 @@ def tagger_hub_download(
             pass
         raise
     finally:
-        try:
-            progress_bar.stop()
-        except Exception:
-            pass
+        if progress_bar is not None:
+            try:
+                progress_bar.stop()
+            except Exception:
+                pass
 
     # rich Progress.stop() 不保证换行，光标可能停在进度条行尾导致下一行日志叠在上面
-    try:
-        import sys as _sys
-        _sys.stderr.write("\n")
-        _sys.stderr.flush()
-    except Exception:
-        pass
+    if progress_bar is not None:
+        try:
+            import sys as _sys
+            _sys.stderr.write("\n")
+            _sys.stderr.flush()
+        except Exception:
+            pass
 
     log.info(f"[tagger-dl] {filename} download complete / 下载完成: {dest}")
     return dest

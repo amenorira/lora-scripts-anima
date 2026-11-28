@@ -302,6 +302,117 @@ class LaunchUtilsAndCloudPolishTests(unittest.TestCase):
             self.assertEqual(log_warn.call_count, 1)
             self.assertIn("models", str(log_warn.call_args))
 
+    def test_non_tty_gates_rich_progress_in_monitor_environment_and_tagger(self):
+        non_tty_console = SimpleNamespace(is_terminal=False)
+
+        # 1. TaskMonitor skips console progress when console is non-TTY
+        mon = TaskMonitor()
+        with patch("backend.log.console", non_tty_console), \
+             patch("backend.monitor.monitor._build_console_progress") as build_cp:
+            mon._update_console_progress("task-1", {"step": 5, "total_steps": 100}, "demo")
+            build_cp.assert_not_called()
+
+        # 2. environment._start_download_job skips make_progress_bar on non-TTY
+        done_event = threading.Event()
+
+        def fake_dl_anima(*, dest_dir, progress, on_log, on_progress, files, progress_lock):
+            on_progress("50%")
+            done_event.set()
+            return [Path("ok.safetensors")]
+
+        with patch("backend.log.console", non_tty_console), \
+             patch("backend.utils.hf_download.make_progress_bar") as mk_env_bar, \
+             patch("tools.download_anima_model.MODEL_FILES", [("repo", "ok.safetensors", "ok.safetensors", 10, "anima")]), \
+             patch("tools.download_anima_model.download_anima_files", side_effect=fake_dl_anima):
+            job_id = env_routes._start_download_job(only_file="ok.safetensors", group="anima")
+            self.assertIsNotNone(job_id)
+            self.assertTrue(done_event.wait(timeout=5))
+            # Wait briefly for thread finally block
+            deadline = time.time() + 2
+            while time.time() < deadline and not env_routes._download_job_snapshot(job_id)["done"]:
+                time.sleep(0.02)
+            env_routes._remove_download_job(job_id)
+            mk_env_bar.assert_not_called()
+
+        # 3. tagger_download.tagger_hub_download skips make_progress_bar on non-TTY
+        with tempfile.TemporaryDirectory() as td:
+            dest = Path(td) / "model.onnx"
+
+            def fake_hf_dl(repo_id, filename, target, **kwargs):
+                kwargs["on_progress"]("100%")
+                Path(target).write_bytes(b"onnx")
+                return Path(target)
+
+            with patch("backend.log.console", non_tty_console), \
+                 patch.object(tagger_download, "_snapshot_path", return_value=dest), \
+                 patch.object(tagger_download, "make_progress_bar") as mk_tag_bar, \
+                 patch.object(tagger_download, "download_hf_file", side_effect=fake_hf_dl):
+                result = tagger_download.tagger_hub_download("org/repo", "model.onnx")
+            self.assertEqual(result, dest)
+            mk_tag_bar.assert_not_called()
+
+    def test_non_tty_logs_throttled_plain_progress(self):
+        non_tty_console = SimpleNamespace(is_terminal=False)
+        mon = TaskMonitor()
+        clock = [100.0]
+
+        with patch("backend.log.console", non_tty_console), \
+             patch("backend.monitor.monitor._build_console_progress") as build_cp, \
+             patch("backend.monitor.monitor.time.monotonic", side_effect=lambda: clock[0]), \
+             patch("backend.monitor.monitor.logger.info") as log_info, \
+             patch.dict(os.environ, {"ANIMA_CONSOLE_PROGRESS_INTERVAL": "30"}, clear=False):
+            # Step 0 should not emit yet
+            mon._update_console_progress("task-1", {"step": 0, "total_steps": 100}, "my_lora")
+            log_info.assert_not_called()
+
+            # First non-zero step emits immediately, omitting empty fields
+            mon._update_console_progress(
+                "task-1",
+                {"step": 1, "total_steps": 100, "epoch": "1/5", "loss": "0.1234", "lr": "1e-4", "speed": "1.2s/it", "eta": "01:58"},
+                "my_lora",
+            )
+            self.assertEqual(log_info.call_count, 1)
+            first_msg = log_info.call_args[0][0]
+            self.assertEqual(
+                first_msg,
+                "Training my_lora | step 1/100 (1.0%) | epoch 1/5 | loss 0.1234 | lr 1e-4 | 1.2s/it | ETA 01:58",
+            )
+
+            # Immediate next step within interval is throttled
+            clock[0] = 110.0
+            mon._update_console_progress("task-1", {"step": 10, "total_steps": 100, "loss": "0.1100"}, "my_lora")
+            self.assertEqual(log_info.call_count, 1)
+
+            # Step after interval emits again (and omits missing fields like epoch/lr/speed/eta)
+            clock[0] = 130.0
+            mon._update_console_progress("task-1", {"step": 35, "total_steps": 100, "loss": "0.0950"}, "my_lora")
+            self.assertEqual(log_info.call_count, 2)
+            self.assertEqual(log_info.call_args[0][0], "Training my_lora | step 35/100 (35.0%) | loss 0.0950")
+
+            # Final step emits immediately even within interval; duplicate completion update is ignored
+            clock[0] = 135.0
+            mon._update_console_progress("task-1", {"step": 100, "total_steps": 100, "loss": "0.0420"}, "my_lora")
+            self.assertEqual(log_info.call_count, 3)
+            self.assertEqual(log_info.call_args[0][0], "Training my_lora | step 100/100 (100.0%) | loss 0.0420")
+            clock[0] = 136.0
+            mon._update_console_progress("task-1", {"step": 100, "total_steps": 100, "loss": "0.0420"}, "my_lora")
+            self.assertEqual(log_info.call_count, 3)
+
+            # Switching to a new task resets throttle and emits immediately on first non-zero step
+            clock[0] = 137.0
+            mon._update_console_progress("task-2", {"step": 1, "total_steps": 50}, "")
+            self.assertEqual(log_info.call_count, 4)
+            self.assertEqual(log_info.call_args[0][0], "Training | step 1/50 (2.0%)")
+
+            # _stop_console_progress resets tracking as well
+            mon._stop_console_progress()
+            clock[0] = 138.0
+            mon._update_console_progress("task-2", {"step": 2, "total_steps": 50}, "retry")
+            self.assertEqual(log_info.call_count, 5)
+            self.assertEqual(log_info.call_args[0][0], "Training retry | step 2/50 (4.0%)")
+
+            build_cp.assert_not_called()
+
     def test_supervisor_launcher_hint_is_platform_aware(self):
         missing_exe = Path("/nonexistent/venv/bin/python")
         fake_engine = SimpleNamespace(python_executable=missing_exe, label="Krea 2")
